@@ -1,0 +1,3 @@
+import jwt from 'jsonwebtoken'; import {User} from './models.js';
+export async function protect(req,res,next){try{const t=(req.headers.authorization||'').replace('Bearer ','');if(!t)return res.status(401).json({message:'Login required'});const d=jwt.verify(t,process.env.JWT_SECRET);req.user=await User.findById(d.id).select('-password');if(!req.user)return res.status(401).json({message:'User not found'});next()}catch{return res.status(401).json({message:'Invalid token'})}}
+export const roles=(...r)=>(req,res,next)=>r.includes(req.user?.role)?next():res.status(403).json({message:'Access denied'});
