@@ -14,7 +14,7 @@ dotenv.config();
 const app = express();
 app.use(cors({
   origin: [
-    'https://stylehub-6yck.onrender.com'
+    'https://stylehub-frontend-g98o.onrender.com'
   ],
   credentials: true
 }));
