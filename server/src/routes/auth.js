@@ -38,7 +38,7 @@ async function deliverOtp({ channel, destination, code, purpose }) {
         'api-key': process.env.BREVO_API_KEY,
         'content-type': 'application/json'
       },
-,
+
       body: JSON.stringify({
         sender: { name: 'STYLEHUB', email: process.env.MAIL_FROM },
         to: [{ email: destination }],
