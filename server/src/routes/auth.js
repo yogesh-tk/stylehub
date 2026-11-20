@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import nodemailer from 'nodemailer';
+// import nodemailer from 'nodemailer';
 import { randomInt } from 'node:crypto';
 import { User, Otp } from '../models.js';
 import { protect, roles } from '../middleware.js';
@@ -28,39 +28,40 @@ const cleanPhone = v => (v || '').replace(/\D/g, '');
 //   }
 //   throw Error('Choose email or mobile OTP');
 // }
-async function deliverOtp({channel,destination,code,purpose}){
-  if(channel==='email'){
-    if(!process.env.BREVO_API_KEY||!process.env.MAIL_FROM)throw Error('Email OTP is not configured');
-    const response=await fetch('https://brevo.com',{
-      method:'POST',
-      headers:{
-        'accept':'application/json',
-        'api-key':process.env.BREVO_API_KEY,
-        'content-type':'application/json'
+async function deliverOtp({ channel, destination, code, purpose }) {
+  if (channel === 'email') {
+    if (!process.env.BREVO_API_KEY || !process.env.MAIL_FROM) throw Error('Email OTP is not configured');
+    const response = await fetch('https://brevo.com', {
+      method: 'POST',
+      headers: {
+        'accept': 'application/json',
+        'api-key': process.env.BREVO_API_KEY,
+        'content-type': 'application/json'
       },
-      body:JSON.stringify({
-        sender:{name:'STYLEHUB',email:process.env.MAIL_FROM},
-        to:[{email:destination}],
-        subject:`STYLEHUB ${purpose==='register'?'registration':'password reset'} OTP`,
-        textContent:`Your STYLEHUB OTP is ${code}. It expires in 5 minutes. Do not share this code.`
+      body: JSON.stringify({
+        sender: { name: 'STYLEHUB', email: process.env.MAIL_FROM },
+        to: [{ email: destination }],
+        subject: `STYLEHUB ${purpose === 'register' ? 'registration' : 'password reset'} OTP`,
+        textContent: `Your STYLEHUB OTP is ${code}. It expires in 5 minutes. Do not share this code.`
       })
     });
-    if(!response.ok){
-      const errData=await response.json().catch(()=>({}));
-      throw Error(`Brevo Error: ${errData.message||response.status}`);
+    if (!response.ok) {
+      const errData = await response.json().catch(() => ({}));
+      throw Error(`Brevo Error: ${errData.message || response.status}`);
     }
     return;
   }
-  if(channel==='phone'){
-    if(!process.env.TWILIO_ACCOUNT_SID||!process.env.TWILIO_AUTH_TOKEN||!process.env.TWILIO_FROM)throw Error('SMS OTP is not configured');
-    const auth=Buffer.from(`${process.env.TWILIO_ACCOUNT_SID}:${process.env.TWILIO_AUTH_TOKEN}`).toString('base64');
-    const body=new URLSearchParams({To:destination.startsWith('+')?destination:`+${destination}`,From:process.env.TWILIO_FROM,Body:`Your STYLEHUB OTP is ${code}. It expires in 5 minutes. Do not share it.`});
-    const response=await fetch(`https://twilio.com{process.env.TWILIO_ACCOUNT_SID}/Messages.json`,{method:'POST',headers:{Authorization:`Basic ${auth}`,'Content-Type':'application/x-www-form-urlencoded'},body});
-    if(!response.ok)throw Error('Could not send SMS OTP');
+  if (channel === 'phone') {
+    if (!process.env.TWILIO_ACCOUNT_SID || !process.env.TWILIO_AUTH_TOKEN || !process.env.TWILIO_FROM) throw Error('SMS OTP is not configured');
+    const auth = Buffer.from(`${process.env.TWILIO_ACCOUNT_SID}:${process.env.TWILIO_AUTH_TOKEN}`).toString('base64');
+    const body = new URLSearchParams({ To: destination.startsWith('+') ? destination : `+${destination}`, From: process.env.TWILIO_FROM, Body: `Your STYLEHUB OTP is ${code}. It expires in 5 minutes. Do not share it.` });
+    const response = await fetch(`https://twilio.com{process.env.TWILIO_ACCOUNT_SID}/Messages.json`, { method: 'POST', headers: { Authorization: `Basic ${auth}`, 'Content-Type': 'application/x-www-form-urlencoded' }, body });
+    if (!response.ok) throw Error('Could not send SMS OTP');
     return;
   }
   throw Error('Choose email or mobile OTP');
 }
+
 
 
 r.post('/send-register-otp', async (q, s) => {
