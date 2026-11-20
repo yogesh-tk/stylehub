@@ -31,13 +31,14 @@ const cleanPhone = v => (v || '').replace(/\D/g, '');
 async function deliverOtp({ channel, destination, code, purpose }) {
   if (channel === 'email') {
     if (!process.env.BREVO_API_KEY || !process.env.MAIL_FROM) throw Error('Email OTP is not configured. Add BREVO_API_KEY and MAIL_FROM in server .env');
-    const response = await fetch('https://brevo.com', {
+        const response = await fetch('https://brevo.com', {
       method: 'POST',
       headers: {
         'accept': 'application/json',
         'api-key': process.env.BREVO_API_KEY,
         'content-type': 'application/json'
       },
+,
       body: JSON.stringify({
         sender: { name: 'STYLEHUB', email: process.env.MAIL_FROM },
         to: [{ email: destination }],
