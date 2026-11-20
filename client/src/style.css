@@ -289,7 +289,7 @@ main#shop {
     border: 1px solid #e9e5dc;
     border-radius: 13px;
     box-shadow: 0 10px 35px #30271a08;
-    outline: none;
+    outline: none !important;
 }
 
 
