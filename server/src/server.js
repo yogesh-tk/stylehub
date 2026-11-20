@@ -12,7 +12,14 @@ import pos from './routes/pos.js';
 import reports from './routes/reports.js';
 dotenv.config();
 const app = express();
- app.use(cors({ origin: process.env.CLIENT_URL })); 
+app.use(cors({
+  origin: [
+    "http://localhost:5173",
+    "https://stylehub-dnk0.onrender.com"
+  ],
+  credentials: true
+}));
+
 app.use(express.json({ limit: '12mb' }));
 app.use(express.urlencoded({ extended: true, limit: '12mb' }));
 app.get('/api/health', (_, r) => r.json({ status: 'ok' }));
