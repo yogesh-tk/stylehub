@@ -257,7 +257,8 @@ main#shop {
     border-radius: 50%;
     background: #fff;
     width: 36px;
-    height: 36px
+    height: 36px;
+    padding-left: 9px;
 }
 
 .product h3 {
