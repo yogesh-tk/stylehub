@@ -45,8 +45,11 @@ async function deliverOtp({ channel, destination, code, purpose }) {
         textContent: `Your STYLEHUB OTP is ${code}. It expires in 5 minutes. Do not share this code.`
       })
     });
-    if (!response.ok) throw Error('Could not send email OTP. Check Brevo API key and verified sender email.');
-    return;
+        if(!response.ok){
+      const errData = await response.json().catch(()=>({}));
+      throw Error(`Brevo Error: ${errData.message || response.status}`);
+    }
+
   }
   if (channel === 'phone') {
     if (!process.env.TWILIO_ACCOUNT_SID || !process.env.TWILIO_AUTH_TOKEN || !process.env.TWILIO_FROM) throw Error('SMS OTP is not configured. Add Twilio settings in server .env');
