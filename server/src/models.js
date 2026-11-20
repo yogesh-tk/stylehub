@@ -22,6 +22,7 @@ export const Product = mongoose.model('Product', new mongoose.Schema({
     description: String,
     category: { type: String, required: true },
     image: String,
+    images: [String],
     price: { type: Number, required: true, min: 0 },
     barcode: { type: String, unique: true, sparse: true },
     sizes: [{
@@ -70,3 +71,7 @@ export const Otp = mongoose.model('Otp', new mongoose.Schema({
     }
 },
     { timestamps: true }));
+
+export const Category = mongoose.model('Category', new mongoose.Schema({ name: { type: String, required: true, unique: true, trim: true }, active: { type: Boolean, default: true } }, { timestamps: true }));
+export const Review = mongoose.model('Review', new mongoose.Schema({ product: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', required: true }, user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true }, order: { type: mongoose.Schema.Types.ObjectId, ref: 'Order', required: true }, rating: { type: Number, min: 1, max: 5, required: true }, title: String, comment: String, images: [String] }, { timestamps: true }));
+export const PosPayment = mongoose.model('PosPayment', new mongoose.Schema({ qrCodeId: { type: String, required: true, unique: true }, customerName: String, customerPhone: String, staff: mongoose.Schema.Types.ObjectId, items: [Object], total: Number, status: { type: String, default: 'pending' }, order: { type: mongoose.Schema.Types.ObjectId, ref: 'Order' } }, { timestamps: true }));

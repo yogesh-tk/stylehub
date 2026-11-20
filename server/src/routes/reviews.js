@@ -1,0 +1,10 @@
+import { Router } from 'express';
+import multer from 'multer';
+import { Product, Order, Review } from '../models.js';
+import { protect } from '../middleware.js';
+const r = Router();
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 2 * 1024 * 1024 }, fileFilter: (_, f, cb) => /^image\/(jpeg|png|webp)$/.test(f.mimetype) ? cb(null, true) : cb(new Error('Only JPG, PNG or WEBP images are allowed')) });
+const toData = files => (files || []).map(f => `data:${f.mimetype};base64,${f.buffer.toString('base64')}`);
+r.get('/product/:id', async (req, res) => { const reviews = await Review.find({ product: req.params.id }).populate('user', 'name').sort({ createdAt: -1 }); const stats = await Review.aggregate([{ $match: { product: (await Product.findById(req.params.id))?._id } }, { $group: { _id: null, average: { $avg: '$rating' }, count: { $sum: 1 } } }]); res.json({ reviews, average: stats[0]?.average || 0, count: stats[0]?.count || 0 }); });
+r.post('/:productId', protect, upload.array('reviewImages', 3), async (req, res) => { try { const { rating, title, comment, orderId } = req.body; if (!rating || Number(rating) < 1 || Number(rating) > 5) return res.status(400).json({ message: 'Choose a rating from 1 to 5' }); const order = await Order.findOne({ _id: orderId, user: req.user._id, paymentStatus: 'paid', 'items.product': req.params.productId }); if (!order) return res.status(403).json({ message: 'Only customers who purchased this product can review it' }); const existing = await Review.findOne({ product: req.params.productId, user: req.user._id, order: order._id }); if (existing) return res.status(409).json({ message: 'You have already reviewed this purchase' }); const review = await Review.create({ product: req.params.productId, user: req.user._id, order: order._id, rating: Number(rating), title, comment, images: toData(req.files) }); res.status(201).json(await review.populate('user', 'name')); } catch (e) { res.status(400).json({ message: e.message }); } });
+export default r;

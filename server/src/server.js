@@ -10,6 +10,8 @@ import products from './routes/products.js';
 import orders from './routes/orders.js';
 import pos from './routes/pos.js';
 import reports from './routes/reports.js';
+import categories from './routes/categories.js';
+import reviews from './routes/reviews.js';
 dotenv.config();
 const app = express();
 app.use(cors({
@@ -27,4 +29,6 @@ app.use('/api/auth', auth); app.use('/api/products', products);
 app.use('/api/orders', orders);
 app.use('/api/pos', pos);
 app.use('/api/reports', reports);
+app.use('/api/categories', categories);
+app.use('/api/reviews', reviews);
 mongoose.connect(process.env.MONGO_URI).then(() => app.listen(process.env.PORT || 5000, () => console.log('STYLEHUB API ready'))).catch(e => { console.error(e); process.exit(1) });
