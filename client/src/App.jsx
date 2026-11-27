@@ -1,6 +1,54 @@
 import { Menu, X } from 'lucide-react';
 import React, { useEffect, useState } from 'react'; import { Routes, Route, Link, useNavigate, useParams } from 'react-router-dom'; import { ShoppingBag, Heart, User, ArrowRight, Search, LogOut, Download, Trash2, Plus, Minus, ScanLine, Eye, EyeOff, ImagePlus, Printer, Search as SearchIcon, CheckCircle2 } from 'lucide-react'; import { api, BASE } from './api';
 const money = n => '₹' + Number(n || 0).toLocaleString('en-IN');
+
+// Shared, defensive wishlist storage used by Shop and Wishlist pages.
+const getProductId = product => {
+    const raw = product?._id ?? product?.id ?? product?.productId ?? product?.product;
+    return raw == null ? '' : String(raw);
+};
+const productKey = product => {
+    const id = getProductId(product);
+    return id || String(product?.slug || `${product?.name || 'product'}-${product?.price ?? ''}`).trim().toLowerCase();
+};
+function readCart() {
+    try {
+        const value = JSON.parse(localStorage.getItem('sh_cart') || '[]');
+        return Array.isArray(value) ? value.filter(x => x && x.product != null) : [];
+    } catch { return []; }
+}
+function cartNow() { return readCart(); }
+function saveCart(items) {
+    const safe = Array.isArray(items) ? items : [];
+    localStorage.setItem('sh_cart', JSON.stringify(safe));
+    window.dispatchEvent(new Event('sh-cart-wish-update'));
+}
+function readWishlist() {
+    try {
+        const saved = JSON.parse(localStorage.getItem('sh_wish') || '[]');
+        if (!Array.isArray(saved)) return [];
+        const unique = new Map();
+        saved.filter(Boolean).forEach(item => {
+            const key = productKey(item);
+            if (key) unique.set(key, item);
+        });
+        return [...unique.values()];
+    } catch { return []; }
+}
+function writeWishlist(items) {
+    const unique = new Map();
+    (Array.isArray(items) ? items : []).filter(Boolean).forEach(item => {
+        const key = productKey(item);
+        if (key) unique.set(key, item);
+    });
+    localStorage.setItem('sh_wish', JSON.stringify([...unique.values()]));
+    window.dispatchEvent(new Event('sh-cart-wish-update'));
+}
+function cartRowsForProduct(cart, product) {
+    const id = getProductId(product);
+    return (Array.isArray(cart) ? cart : []).filter(row => String(row.product ?? '') === id);
+}
+
 function useAuth() {
     const [user, setUser] = useState(() => JSON.parse(localStorage.getItem('sh_user') || 'null'));
     return {
@@ -23,18 +71,10 @@ function useStoreCounts() {
 
     useEffect(() => {
         const updateCounts = () => {
-            const cart = JSON.parse(
-                localStorage.getItem('sh_cart') || '[]'
-            );
-
-            const wish = JSON.parse(
-                localStorage.getItem('sh_wish') || '[]'
-            );
-
+            const cart = readCart();
+            const wish = readWishlist();
             setCounts({
-                cart: cart.reduce(
-                    (total, item) => total + item.quantity, 0
-                ),
+                cart: cart.reduce((total, item) => total + Math.max(0, Number(item.quantity) || 0), 0),
                 wishlist: wish.length
             });
         };
@@ -128,40 +168,46 @@ function Header({ a }) {
         </header>
     );
 }
-function readStoredArray(key) {
-    try {
-        const value = JSON.parse(localStorage.getItem(key) || '[]');
-        return Array.isArray(value) ? value : [];
-    } catch {
-        return [];
-    }
-}
-function productId(product) {
-    const id = (typeof product === 'string' || typeof product === 'number') ? product : (product?._id ?? product?.id ?? product?.productId ?? product?.product?._id ?? product?.product);
-    return id == null ? '' : String(id);
-}
-function readWishlist() { return readStoredArray('sh_wish'); }
-function writeWishlist(items) {
-    localStorage.setItem('sh_wish', JSON.stringify(items));
-    window.dispatchEvent(new Event('sh-cart-wish-update'));
-}
-function cartNow(){ return readStoredArray('sh_cart'); }
-function saveCart(items){ localStorage.setItem('sh_cart', JSON.stringify(items)); window.dispatchEvent(new Event('sh-cart-wish-update')); }
 function Card({ p, wish, active = false, onAdd, quantity = 0, onIncrement, onDecrement, onGoCart }) {
  const images=p.images?.length?p.images:[p.image].filter(Boolean);
- return <article className="product group"><Link to={`/product/${p._id}`} className="photo product-photo"><img src={images[0] || 'https://images.unsplash.com/photo-1529374255404-311a2a4f1fd9?w=700'} alt={p.name}/><span className="product-view">Quick view <ArrowRight size={14}/></span><small>{p.category}</small></Link><button type="button" className={'heart '+(active?'heart-active':'')} onClick={e=>{e.preventDefault();e.stopPropagation();wish?.(p)}} aria-label={active?'Remove from wishlist':'Add to wishlist'} aria-pressed={active}><Heart size={18} fill={active?'currentColor':'none'}/></button><div className="product-meta"><Link to={`/product/${p._id}`}><h3>{p.name}</h3></Link><b>{money(p.price)}</b></div><p>{p.description}</p>{quantity>0?<div className="card-cart-actions"><div className="card-qty"><button aria-label="Decrease quantity" onClick={()=>onDecrement?.(p)}><Minus size={15}/></button><b>{quantity}</b><button aria-label="Increase quantity" onClick={()=>onIncrement?.(p)}><Plus size={15}/></button></div><button className="outline go-to-cart" onClick={onGoCart}>Go to Cart <ArrowRight size={15}/></button></div>:<button className="outline" onClick={()=>onAdd(p)}>Add To Cart<ArrowRight size={15}/></button>}</article>
+ return <article className="product group"><Link to={`/product/${getProductId(p)}`} className="photo product-photo"><img src={images[0] || 'https://images.unsplash.com/photo-1529374255404-311a2a4f1fd9?w=700'} alt={p.name}/><span className="product-view">Quick view <ArrowRight size={14}/></span><small>{p.category}</small></Link><button type="button" className={'heart '+(active?'heart-active':'')} onClick={event=>{event.preventDefault();event.stopPropagation();if(typeof wish==='function')wish(p);}} aria-label={active?'Remove from wishlist':'Add to wishlist'} aria-pressed={active} title={active?'Remove from wishlist':'Add to wishlist'}><Heart size={18} fill={active?'currentColor':'none'}/></button><div className="product-meta"><Link to={`/product/${getProductId(p)}`}><h3>{p.name}</h3></Link><b>{money(p.price)}</b></div><p>{p.description}</p>{quantity>0?<div className="card-cart-actions"><div className="card-qty"><button aria-label="Decrease quantity" onClick={()=>onDecrement?.(p)}><Minus size={15}/></button><b>{quantity}</b><button aria-label="Increase quantity" onClick={()=>onIncrement?.(p)}><Plus size={15}/></button></div><button className="outline go-to-cart" onClick={onGoCart}>Go to Cart <ArrowRight size={15}/></button></div>:<button className="outline" onClick={()=>onAdd(p)}>Add To Cart<ArrowRight size={15}/></button>}</article>
 }
-function SizePicker({product,onClose,onAdded}) {
+function SizePicker({ product, onClose, onAdded }) {
  const [size,S]=useState(''); const [msg,M]=useState('');
+ useEffect(()=>{S('');M('')},[product]);
  if(!product)return null;
- const add=()=>{const stock=product.sizes?.find(z=>z.size===size)?.stock||0;if(!size)return M('Please select a size');if(!stock)return M('This size is out of stock');const old=cartNow(),idx=old.findIndex(x=>x.product===product._id&&x.size===size);let next;if(idx>=0){next=old.map((x,i)=>i===idx?{...x,quantity:Math.min(stock,x.quantity+1),stock}:x);if(old[idx].quantity>=stock)return M('Stock limit reached')}else next=[...old,{product:product._id,name:product.name,image:product.image,images:product.images||[],price:product.price,size,quantity:1,stock}];saveCart(next);onAdded?.();onClose();};
- return <div className="modal-backdrop" onClick={onClose}><section className="size-modal rounded-2xl bg-white shadow-2xl" onClick={e=>e.stopPropagation()}><button className="modal-close" onClick={onClose}><X/></button><img src={product.image} alt=""/><div><small>SELECT YOUR FIT</small><h2>{product.name}</h2><b>{money(product.price)}</b><p>Choose a size to add this item to your bag.</p><div className="size-choices">{(product.sizes||[]).map(z=><button key={z.size} disabled={!z.stock} className={size===z.size?'selected':''} onClick={()=>S(z.size)}>{z.size}{!z.stock?' · Sold out':''}</button>)}</div>{msg&&<p className="error">{msg}</p>}<button className="btn" onClick={add}>Add to bag <ShoppingBag size={16}/></button></div></section></div>
+ const sizes=Array.isArray(product.sizes)?product.sizes:[];
+ const add=()=>{
+  if(!sizes.length)return M('No sizes are configured for this product. Please contact the store admin.');
+  if(!size)return M('Please select a size');
+  const selected=sizes.find(z=>String(z.size)===String(size));
+  if(!selected)return M('Selected size is not available. Please choose again.');
+  const stock=Math.max(0,Number(selected.stock)||0);
+  if(stock<=0)return M('This size is out of stock');
+  const productId=getProductId(product);
+  if(!productId)return M('Product ID is missing. Please refresh and try again.');
+  const old=cartNow();
+  const idx=old.findIndex(x=>String(x.product)===productId&&String(x.size)===String(size));
+  let next;
+  if(idx>=0){
+   const currentQty=Math.max(0,Number(old[idx].quantity)||0);
+   if(currentQty>=stock)return M('Stock limit reached');
+   next=old.map((x,i)=>i===idx?{...x,quantity:currentQty+1,stock}:x);
+  }else{
+   next=[...old,{product:productId,name:product.name,image:product.image||product.images?.[0]||'',images:Array.isArray(product.images)?product.images:[],price:Number(product.price)||0,size:String(size),quantity:1,stock}];
+  }
+  saveCart(next);
+  onAdded?.(next);
+  onClose?.();
+ };
+ return <div className="modal-backdrop" onClick={onClose}><section className="size-modal rounded-2xl bg-white shadow-2xl" onClick={e=>e.stopPropagation()}><button type="button" className="modal-close" onClick={onClose}><X/></button><img src={product.image||product.images?.[0]||''} alt={product.name||'Product'}/><div><small>SELECT YOUR FIT</small><h2>{product.name}</h2><b>{money(product.price)}</b><p>Choose a size to add this item to your bag.</p><div className="size-choices">{sizes.map(z=><button type="button" key={z.size} disabled={Number(z.stock)<=0} className={String(size)===String(z.size)?'selected':''} onClick={()=>S(String(z.size))}>{z.size}{Number(z.stock)<=0?' · Sold out':''}</button>)}</div>{msg&&<p className="error">{msg}</p>}<button type="button" className="btn" onClick={add}>Add to bag <ShoppingBag size={16}/></button></div></section></div>
 }
+
 function Home() {
  const navigate=useNavigate();
  const [ps,setPs]=useState([]),[cats,setCats]=useState([]),[s,S]=useState(''),[cat,C]=useState('All'),[sortBy,SortBy]=useState('popular'),[wish,W]=useState(readWishlist),[cart,CartState]=useState(cartNow()),[picker,Pick]=useState(null);
- useEffect(()=>{api('/products').then(setPs).catch(()=>{});api('/categories').then(setCats).catch(()=>{});const sync=()=>{CartState(cartNow());W(readWishlist())};window.addEventListener('sh-cart-wish-update',sync);window.addEventListener('storage',sync);return()=>{window.removeEventListener('sh-cart-wish-update',sync);window.removeEventListener('storage',sync)};},[]);
- const toggleWish=p=>{const id=productId(p);if(!id)return;const current=readWishlist();const exists=current.some(x=>productId(x)===id);const next=exists?current.filter(x=>productId(x)!==id):[...current,p];writeWishlist(next);W(next);};
+ useEffect(()=>{api('/products').then(setPs).catch(()=>{});api('/categories').then(setCats).catch(()=>{});const sync=()=>{CartState(cartNow());W(readWishlist())};window.addEventListener('sh-cart-wish-update',sync);sync();return()=>window.removeEventListener('sh-cart-wish-update',sync);},[]);
+ const toggleWish=p=>{if(!p)return;const key=productKey(p);const current=readWishlist();const exists=current.some(item=>productKey(item)===key);const next=exists?current.filter(item=>productKey(item)!==key):[...current,{...p,_id:p._id??p.id??key}];writeWishlist(next);W(next);};
  const filtered=ps.filter(p=>(!s||p.name.toLowerCase().includes(s.toLowerCase()))&&(cat==='All'||p.category===cat));
  const shown=[...filtered].sort((a,b)=>{
   if(sortBy==='price-low')return Number(a.price||0)-Number(b.price||0);
@@ -170,36 +216,38 @@ function Home() {
   const popularity=p=>Number(p.reviewCount||p.reviewsCount||p.soldCount||p.salesCount||0)+(Number(p.averageRating||p.rating||0)*10);
   return popularity(b)-popularity(a);
  });
- return <><section className="hero"><div><small>THE NEW SEASON / STYLEHUB EDIT</small><h1>Dress sharp.<br/><i>Live bold.</i></h1><p>Modern essentials for everyday confidence. Discover pieces made to move with you.</p><a className="btn" href="#shop">Explore collection <ArrowRight size={17}/></a><p className="micro">01 — CURATED FOR EVERYDAY</p></div><img src="https://images.unsplash.com/photo-1516257984-b1b4d707412e?w=1200" alt="StyleHub collection"/></section><div className="ticker">BUILT FOR YOUR EVERYDAY　 ✳　 PREMIUM FITS　 ✳　 MADE TO MOVE</div><main id="shop"><div className="heading"><div><small>THE STYLEHUB EDIT</small><h2>Shop the collection<span>.</span></h2></div><p>Considered pieces. Everyday confidence.</p></div><div className="category-strip flex items-center gap-2 overflow-x-auto"><button className={cat==='All'?'active':''} onClick={()=>C('All')}>All products</button>{cats.map(x=><button key={x._id} className={cat===x.name?'active':''} onClick={()=>C(x.name)}>{x.name}</button>)}</div><div className="filters"><label><Search/><input placeholder="Search products..." value={s} onChange={e=>S(e.target.value)}/></label><select aria-label="Filter by category" value={cat} onChange={e=>C(e.target.value)}><option value="All">All categories</option>{cats.map(x=><option key={x._id} value={x.name}>{x.name}</option>)}</select><select aria-label="Sort products" value={sortBy} onChange={e=>SortBy(e.target.value)}><option value="popular">Popularity</option><option value="price-low">Price: Low to High</option><option value="price-high">Price: High to Low</option><option value="newest">Newest</option></select></div><div className="grid">{shown.map(p=><Card key={p._id} p={p} wish={toggleWish} active={wish.some(x=>productId(x)===productId(p))} quantity={cart.filter(x=>x.product===p._id).reduce((n,x)=>n+x.quantity,0)} onAdd={Pick} onIncrement={product=>{const row=cart.find(x=>x.product===product._id);if(!row)return Pick(product);if(row.quantity>=Number(row.stock||99))return;const next=cart.map(x=>x===row?{...x,quantity:x.quantity+1}:x);CartState(next);saveCart(next)}} onDecrement={product=>{const row=cart.find(x=>x.product===product._id);if(!row)return;const next=row.quantity<=1?cart.filter(x=>x!==row):cart.map(x=>x===row?{...x,quantity:x.quantity-1}:x);CartState(next);saveCart(next)}} onGoCart={()=>navigate('/cart')}/>)}</div>{!shown.length&&<p className="empty">No products found in this collection.</p>}</main><section className="promise"><div><small>THE STYLEHUB PROMISE</small><h2>Good clothes.<br/><i>Good energy.</i></h2></div><p>✳ Thoughtful everyday essentials<br/><br/>✳ Easy orders & reliable delivery<br/><br/>✳ Fits worth coming back for</p></section><footer><b className="logo">STYLE<span>HUB.</span></b><small>Everyday style, made simple. © 2026 STYLEHUB</small></footer><SizePicker product={picker} onClose={()=>Pick(null)}/></>
+ return <><section className="hero"><div><small>THE NEW SEASON / STYLEHUB EDIT</small><h1>Dress sharp.<br/><i>Live bold.</i></h1><p>Modern essentials for everyday confidence. Discover pieces made to move with you.</p><a className="btn" href="#shop">Explore collection <ArrowRight size={17}/></a><p className="micro">01 — CURATED FOR EVERYDAY</p></div><img src="https://images.unsplash.com/photo-1516257984-b1b4d707412e?w=1200" alt="StyleHub collection"/></section><div className="ticker">BUILT FOR YOUR EVERYDAY　 ✳　 PREMIUM FITS　 ✳　 MADE TO MOVE</div><main id="shop"><div className="heading"><div><small>THE STYLEHUB EDIT</small><h2>Shop the collection<span>.</span></h2></div><p>Considered pieces. Everyday confidence.</p></div><div className="category-strip flex items-center gap-2 overflow-x-auto"><button className={cat==='All'?'active':''} onClick={()=>C('All')}>All products</button>{cats.map(x=><button key={x._id} className={cat===x.name?'active':''} onClick={()=>C(x.name)}>{x.name}</button>)}</div><div className="filters"><label><Search/><input placeholder="Search products..." value={s} onChange={e=>S(e.target.value)}/></label><select aria-label="Filter by category" value={cat} onChange={e=>C(e.target.value)}><option value="All">All categories</option>{cats.map(x=><option key={x._id} value={x.name}>{x.name}</option>)}</select><select aria-label="Sort products" value={sortBy} onChange={e=>SortBy(e.target.value)}><option value="popular">Popularity</option><option value="price-low">Price: Low to High</option><option value="price-high">Price: High to Low</option><option value="newest">Newest</option></select></div><div className="grid">{shown.map(p=><Card key={p._id} p={p} wish={toggleWish} active={wish.some(x=>productKey(x)===productKey(p))} quantity={cartRowsForProduct(cart,p).reduce((n,x)=>n+Number(x.quantity||0),0)} onAdd={Pick} onIncrement={product=>{const rows=cartRowsForProduct(cart,product);const row=rows.find(x=>Number(x.quantity||0)<Math.max(0,Number(x.stock)||0));if(!row){Pick(product);return;}const next=cart.map(x=>x===row?{...x,quantity:Number(x.quantity||0)+1}:x);CartState(next);saveCart(next)}} onDecrement={product=>{const row=[...cartRowsForProduct(cart,product)].reverse().find(x=>Number(x.quantity||0)>0);if(!row)return;const next=Number(row.quantity)<=1?cart.filter(x=>x!==row):cart.map(x=>x===row?{...x,quantity:Number(x.quantity)-1}:x);CartState(next);saveCart(next)}} onGoCart={()=>navigate('/cart')}/>)}</div>{!shown.length&&<p className="empty">No products found in this collection.</p>}</main><section className="promise"><div><small>THE STYLEHUB PROMISE</small><h2>Good clothes.<br/><i>Good energy.</i></h2></div><p>✳ Thoughtful everyday essentials<br/><br/>✳ Easy orders & reliable delivery<br/><br/>✳ Fits worth coming back for</p></section><footer><b className="logo">STYLE<span>HUB.</span></b><small>Everyday style, made simple. © 2026 STYLEHUB</small></footer><SizePicker product={picker} onClose={()=>Pick(null)}/></>
 }
 function ProductDetails(){
  const {id}=useParams();const navigate=useNavigate();
- const [p,P]=useState(null),[reviews,R]=useState({reviews:[],average:0,count:0}),[img,I]=useState(0),[picker,Pick]=useState(null),[err,E]=useState(''),[cart,CartState]=useState(cartNow());
+ const [p,P]=useState(null),[reviews,R]=useState({reviews:[],average:0,count:0}),[img,I]=useState(0),[picker,Pick]=useState(null),[err,E]=useState(''),[cart,CartState]=useState(cartNow()),[wish,W]=useState(readWishlist());
  useEffect(()=>{
-  api('/products').then(a=>P(a.find(x=>x._id===id)||null)).catch(e=>E(e.message));
+  api('/products').then(a=>P(a.find(x=>getProductId(x)===String(id))||null)).catch(e=>E(e.message));
   api('/reviews/product/'+id).then(R).catch(()=>{});
-  const sync=()=>CartState(cartNow());
+  const sync=()=>{CartState(cartNow());W(readWishlist())};
   window.addEventListener('sh-cart-wish-update',sync);
   sync();
   return()=>window.removeEventListener('sh-cart-wish-update',sync);
  },[id]);
  if(!p)return <main className="page"><p>{err||'Loading product...'}</p></main>;
  const imgs=p.images?.length?p.images:[p.image].filter(Boolean);
- const productRows=cart.filter(x=>x.product===p._id);
+ const isWished=wish.some(x=>productKey(x)===productKey(p));
+ const toggleDetailWish=()=>{const key=productKey(p);const current=readWishlist();const exists=current.some(x=>productKey(x)===key);const next=exists?current.filter(x=>productKey(x)!==key):[...current,{...p,_id:p._id??p.id??key}];writeWishlist(next);W(next)};
+ const productRows=cartRowsForProduct(cart,p);
  const quantity=productRows.reduce((n,x)=>n+Number(x.quantity||0),0);
  const increment=()=>{
-  const row=productRows.find(x=>Number(x.quantity||0)<Number(x.stock||99));
-  if(!row){if(!productRows.length)Pick(p);return;}
-  const next=cart.map(x=>x===row?{...x,quantity:x.quantity+1}:x);
+  const row=productRows.find(x=>Number(x.quantity||0)<Math.max(0,Number(x.stock)||0));
+  if(!row){Pick(p);return;}
+  const next=cart.map(x=>x===row?{...x,quantity:Number(x.quantity||0)+1}:x);
   CartState(next);saveCart(next);
  };
  const decrement=()=>{
   const row=[...productRows].reverse().find(x=>Number(x.quantity||0)>0);
   if(!row)return;
-  const next=row.quantity<=1?cart.filter(x=>x!==row):cart.map(x=>x===row?{...x,quantity:x.quantity-1}:x);
+  const next=Number(row.quantity)<=1?cart.filter(x=>x!==row):cart.map(x=>x===row?{...x,quantity:Number(x.quantity)-1}:x);
   CartState(next);saveCart(next);
  };
- return <main className="page product-detail mx-auto max-w-7xl px-6 py-10"><div className="detail-gallery"><div className="detail-thumbs">{imgs.map((x,i)=><button className={img===i?'active':''} onClick={()=>I(i)} key={i}><img src={x}/></button>)}</div><div className="detail-main-image"><img src={imgs[img]||p.image} alt={p.name}/></div></div><section className="detail-info"><small>{p.category} / STYLEHUB</small><h1>{p.name}</h1><div className="review-summary">⭐ {reviews.average.toFixed(1)} · {reviews.count} verified reviews</div><h2>{money(p.price)}</h2><p>{p.description}</p><div className="detail-size"><b>Available sizes</b><div>{(p.sizes||[]).map(z=><span className={!z.stock?'sold':''} key={z.size}>{z.size} {z.stock?'':'· Out of stock'}</span>)}</div></div>{quantity>0?<div className="card-cart-actions detail-cart-actions"><div className="card-qty"><button aria-label="Decrease quantity" onClick={decrement}><Minus size={15}/></button><b>{quantity}</b><button aria-label="Increase quantity" onClick={increment}><Plus size={15}/></button></div><button className="outline go-to-cart" onClick={()=>navigate('/cart')}>Go to Cart <ArrowRight size={15}/></button></div>:<button className="btn" onClick={()=>Pick(p)}>Choose size & add to cart <ShoppingBag/></button>}<p className="detail-note">Secure checkout · Easy order tracking · Quality essentials</p></section><section className="review-section"><small>THE COMMUNITY</small><h2>Customer reviews<span>.</span></h2>{reviews.reviews.map(r=><article className="review-card" key={r._id}><b>{'★'.repeat(r.rating)}{'☆'.repeat(5-r.rating)}</b><h3>{r.title||'Verified purchase'}</h3><p>{r.comment}</p><small>{r.user?.name||'Customer'} · {new Date(r.createdAt).toLocaleDateString('en-IN')}</small><div className="review-images">{(r.images||[]).map((x,i)=><img key={i} src={x}/>)}</div></article>)}{!reviews.count&&<p>No reviews yet. Be the first to share your experience after purchase.</p>}</section><SizePicker product={picker} onClose={()=>Pick(null)} onAdded={()=>CartState(cartNow())}/></main>
+ return <main className="page product-detail mx-auto max-w-7xl px-6 py-10"><div className="detail-gallery"><div className="detail-thumbs">{imgs.map((x,i)=><button className={img===i?'active':''} onClick={()=>I(i)} key={i}><img src={x}/></button>)}</div><div className="detail-main-image"><img src={imgs[img]||p.image} alt={p.name}/></div></div><section className="detail-info"><div className="detail-title-row"><div><small>{p.category} / STYLEHUB</small><h1>{p.name}</h1></div><button type="button" className={'heart detail-heart '+(isWished?'heart-active':'')} onClick={toggleDetailWish} aria-label={isWished?'Remove from wishlist':'Add to wishlist'} title={isWished?'Remove from wishlist':'Add to wishlist'}><Heart size={21} fill={isWished?'currentColor':'none'}/></button></div><div className="review-summary">⭐ {reviews.average.toFixed(1)} · {reviews.count} verified reviews</div><h2>{money(p.price)}</h2><p>{p.description}</p><div className="detail-size"><b>Available sizes</b><div>{(p.sizes||[]).map(z=><span className={!z.stock?'sold':''} key={z.size}>{z.size} {z.stock?'':'· Out of stock'}</span>)}</div></div>{quantity>0?<div className="card-cart-actions detail-cart-actions"><div className="card-qty"><button aria-label="Decrease quantity" onClick={decrement}><Minus size={15}/></button><b>{quantity}</b><button aria-label="Increase quantity" onClick={increment}><Plus size={15}/></button></div><button className="outline go-to-cart" onClick={()=>navigate('/cart')}>Go to Cart <ArrowRight size={15}/></button></div>:<button className="btn" onClick={()=>Pick(p)}>Choose size & add to cart <ShoppingBag/></button>}<p className="detail-note">Secure checkout · Easy order tracking · Quality essentials</p></section><section className="review-section"><small>THE COMMUNITY</small><h2>Customer reviews<span>.</span></h2>{reviews.reviews.map(r=><article className="review-card" key={r._id}><b>{'★'.repeat(r.rating)}{'☆'.repeat(5-r.rating)}</b><h3>{r.title||'Verified purchase'}</h3><p>{r.comment}</p><small>{r.user?.name||'Customer'} · {new Date(r.createdAt).toLocaleDateString('en-IN')}</small><div className="review-images">{(r.images||[]).map((x,i)=><img key={i} src={x}/>)}</div></article>)}{!reviews.count&&<p>No reviews yet. Be the first to share your experience after purchase.</p>}</section><SizePicker product={picker} onClose={()=>Pick(null)} onAdded={()=>CartState(cartNow())}/></main>
 }
 function PasswordField({ value, onChange, placeholder = 'Password' }) { const [show, S] = useState(false); return <><div className="password-wrap"><input type={show ? 'text' : 'password'} value={value} onChange={onChange} placeholder={placeholder} required /><button type="button" className="password-toggle" onClick={() => S(!show)} aria-label={show ? 'Hide password' : 'Show password'}>{show ? <EyeOff size={18} /> : <Eye size={18} />}</button></div><small className="password-help">Password must contain at least 8 characters and one special symbol (example: @, #, !, $).</small></> }
 function Auth({ a, mode }) {
@@ -221,14 +269,30 @@ function Auth({ a, mode }) {
         {mode === 'login' ? <p>New here? <Link to="/register">Register</Link></p> : mode === 'register' ? <p>Already a member? <Link to="/login">Login</Link></p> : <p><Link to="/login">Back to login</Link></p>}
     </form></main>
 }
-function Cart(){const [it,I]=useState(cartNow());const n=useNavigate();const total=it.reduce((a,x)=>a+x.price*x.quantity,0);const save=v=>{I(v);saveCart(v)};const qty=(item,d)=>save(it.map(x=>x.product===item.product&&x.size===item.size?{...x,quantity:Math.max(1,Math.min(Number(x.stock||99),x.quantity+d))}:x));return <main className="page"><h1>Your bag<span>.</span></h1>{it.map((x,i)=><div className="cartrow" key={x.product+'-'+x.size}><img src={x.image}/><div><b>{x.name}</b><small>Size {x.size} · {money(x.price)}</small></div><div className="qty-control"><button onClick={()=>qty(x,-1)}><Minus/></button><b>{x.quantity}</b><button disabled={x.quantity>=Number(x.stock||99)} onClick={()=>qty(x,1)}><Plus/></button></div><b>{money(x.price*x.quantity)}</b><button onClick={()=>save(it.filter((_,j)=>j!==i))}><Trash2/></button></div>)}{!it.length&&<p>Your bag is empty. Explore the collection to find your fit.</p>}<h3 className="total">Subtotal: {money(total)}</h3><button className="btn" disabled={!it.length} onClick={()=>n('/checkout')}>Checkout <ArrowRight/></button></main>}
+function Cart(){const [it,I]=useState(cartNow());const n=useNavigate();const total=it.reduce((a,x)=>a+x.price*x.quantity,0);const save=v=>{I(v);saveCart(v)};const qty=(item,d)=>save(it.map(x=>x.product===item.product&&x.size===item.size?{...x,quantity:Math.max(1,Math.min(Math.max(0,Number(x.stock)||0),Number(x.quantity||0)+d))}:x));return <main className="page"><h1>Your bag<span>.</span></h1>{it.map((x,i)=><div className="cartrow" key={x.product+'-'+x.size}><img src={x.image}/><div><b>{x.name}</b><small>Size {x.size} · {money(x.price)}</small></div><div className="qty-control"><button onClick={()=>qty(x,-1)}><Minus/></button><b>{x.quantity}</b><button disabled={Number(x.quantity||0)>=Math.max(0,Number(x.stock)||0)} onClick={()=>qty(x,1)}><Plus/></button></div><b>{money(x.price*x.quantity)}</b><button onClick={()=>save(it.filter((_,j)=>j!==i))}><Trash2/></button></div>)}{!it.length&&<p>Your bag is empty. Explore the collection to find your fit.</p>}<h3 className="total">Subtotal: {money(total)}</h3><button className="btn" disabled={!it.length} onClick={()=>n('/checkout')}>Checkout <ArrowRight/></button></main>}
 function Wishlist(){
  const navigate=useNavigate();
  const [it,I]=useState(readWishlist),[picker,Pick]=useState(null),[cart,CartState]=useState(cartNow());
- useEffect(()=>{const sync=()=>{CartState(cartNow());I(readWishlist())};window.addEventListener('sh-cart-wish-update',sync);window.addEventListener('storage',sync);return()=>{window.removeEventListener('sh-cart-wish-update',sync);window.removeEventListener('storage',sync)}},[]);
- const remove=x=>{const id=productId(x);const v=readWishlist().filter(y=>productId(y)!==id);writeWishlist(v);I(v)};
- const changeQty=(product,delta)=>{const row=cart.find(x=>x.product===product._id);if(!row){if(delta>0)Pick(product);return;}if(delta>0&&row.quantity>=Number(row.stock||99))return;const next=row.quantity+delta<=0?cart.filter(x=>x!==row):cart.map(x=>x===row?{...x,quantity:x.quantity+delta}:x);CartState(next);saveCart(next)};
- return <main className="page"><div className="heading"><div><small>SAVED FOR LATER</small><h1>Wishlist<span>.</span></h1></div><p>{it.length} saved item{it.length===1?'':'s'}</p></div><div className="grid">{it.map(p=><Card key={productId(p)} p={p} active wish={remove} onAdd={Pick} quantity={cart.filter(x=>x.product===p._id).reduce((n,x)=>n+x.quantity,0)} onIncrement={product=>changeQty(product,1)} onDecrement={product=>changeQty(product,-1)} onGoCart={()=>navigate('/cart')}/>)}</div>{!it.length&&<p>No saved items. Explore the collection and tap the heart to save products.</p>}<SizePicker product={picker} onClose={()=>Pick(null)}/></main>}
+ useEffect(()=>{
+  let alive=true;
+  const sync=()=>{CartState(cartNow());I(readWishlist())};
+  window.addEventListener('sh-cart-wish-update',sync);
+  sync();
+  api('/products').then(products=>{
+   if(!alive||!Array.isArray(products))return;
+   const refreshed=readWishlist().map(saved=>{
+    const id=getProductId(saved);
+    const latest=products.find(item=>getProductId(item)===id);
+    return latest?{...saved,...latest}:saved;
+   });
+   writeWishlist(refreshed);
+   I(refreshed);
+  }).catch(()=>{});
+  return()=>{alive=false;window.removeEventListener('sh-cart-wish-update',sync)};
+ },[]);
+ const remove=x=>{const key=productKey(x);const v=readWishlist().filter(y=>productKey(y)!==key);writeWishlist(v);I(v)};
+ const changeQty=(product,delta)=>{const rows=cartRowsForProduct(cart,product);const row=delta>0?rows.find(x=>Number(x.quantity||0)<Math.max(0,Number(x.stock)||0)):[...rows].reverse().find(x=>Number(x.quantity||0)>0);if(!row){if(delta>0)Pick(product);return;}const next=Number(row.quantity)+delta<=0?cart.filter(x=>x!==row):cart.map(x=>x===row?{...x,quantity:Number(x.quantity)+delta}:x);CartState(next);saveCart(next)};
+ return <main className="page"><div className="heading"><div><small>SAVED FOR LATER</small><h1>Wishlist<span>.</span></h1></div><p>{it.length} saved item{it.length===1?'':'s'}</p></div><div className="grid">{it.map(p=><Card key={productKey(p)} p={p} active wish={remove} onAdd={Pick} quantity={cartRowsForProduct(cart,p).reduce((n,x)=>n+Number(x.quantity||0),0)} onIncrement={product=>changeQty(product,1)} onDecrement={product=>changeQty(product,-1)} onGoCart={()=>navigate('/cart')}/>)}</div>{!it.length&&<p>No saved items. Explore the collection and tap the heart to save products.</p>}<SizePicker product={picker} onClose={()=>Pick(null)} onAdded={next=>CartState(next)}/></main>}
 function Checkout({ a }) { const [ad, A] = useState({ fullName: a.user?.name || '', phone: a.user?.phone || '', line1: '', line2: '', city: '', state: 'Tamil Nadu', pincode: '' }), [err, E] = useState(''); const n = useNavigate(), items = JSON.parse(localStorage.getItem('sh_cart') || '[]'), total = items.reduce((v, x) => v + x.price * x.quantity, 0); const pay = async e => { e.preventDefault(); try { const p = await api('/orders/create-payment', { method: 'POST', body: JSON.stringify({ items: items.map(x => ({ product: x.product, size: x.size, quantity: x.quantity })) }) }); const rz = new window.Razorpay({ key: p.key, amount: p.amount, currency: p.currency, order_id: p.id, name: 'STYLEHUB', description: 'Clothing order', prefill: { name: ad.fullName, contact: ad.phone }, handler: async response => { try { await api('/orders/verify-payment', { method: 'POST', body: JSON.stringify({ ...response, items: items.map(x => ({ product: x.product, size: x.size, quantity: x.quantity })), address: ad }) }); localStorage.removeItem('sh_cart'); n('/orders') } catch (x) { E(x.message) } } }); rz.open() } catch (x) { E(x.message) } }; return <main className="page"><h1>Checkout<span>.</span></h1><form className="checkout" onSubmit={pay}><section className="panel"><h2>Delivery address</h2>{Object.keys(ad).map(k => <label>{k}<input required={k !== 'line2'} value={ad[k]} onChange={e => A({ ...ad, [k]: e.target.value })} /></label>)}</section><section className="panel"><h2>Order summary</h2>{items.map(x => <p>{x.name} · {x.size} × {x.quantity} <b>{money(x.price * x.quantity)}</b></p>)}<hr /><h3>Total {money(total)}</h3><small>Secure Razorpay checkout. Order is confirmed after server verification.</small>{err && <p className="error">{err}</p>}<button className="btn" disabled={!items.length}>Pay {money(total)}</button></section></form></main> }
 function ReviewForm({productId,orderId}){const [rating,R]=useState(5),[title,T]=useState(''),[comment,C]=useState(''),[files,F]=useState([]),[msg,M]=useState('');const submit=async e=>{e.preventDefault();try{const d=new FormData();d.append('rating',rating);d.append('title',title);d.append('comment',comment);d.append('orderId',orderId);files.slice(0,3).forEach(f=>d.append('reviewImages',f));await api('/reviews/'+productId,{method:'POST',body:d});M('Review submitted. Thank you!');}catch(x){M(x.message)}};return <form className="review-form" onSubmit={submit}><b>Share your fit review</b><div className="rating-picker">{[1,2,3,4,5].map(n=><button type="button" key={n} onClick={()=>R(n)} className={n<=rating?'chosen':''}>★</button>)}</div><input placeholder="Review title (optional)" value={title} onChange={e=>T(e.target.value)}/><textarea placeholder="Tell others about the fit, fabric and quality..." value={comment} onChange={e=>C(e.target.value)}/><label>Add photos (up to 3)<input type="file" accept="image/png,image/jpeg,image/webp" multiple onChange={e=>F(Array.from(e.target.files||[]).slice(0,3))}/></label><button className="outline">Submit review</button>{msg&&<small>{msg}</small>}</form>}
 function OrderTimeline({order}) {
