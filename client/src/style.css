@@ -1647,3 +1647,70 @@ header{backdrop-filter:blur(16px);background:rgba(248,247,243,.94);box-shadow:0 
 @media(max-width:850px){.product-detail{grid-template-columns:1fr;gap:20px}.detail-info{position:static;padding:5px}.detail-main-image img{height:520px}.review-section{grid-column:1}.detail-gallery{grid-template-columns:60px 1fr}.detail-thumbs img{height:65px}}
 @media(max-width:600px){.size-modal{grid-template-columns:90px 1fr;padding:18px;gap:14px}.size-modal>img{width:90px;height:135px}.detail-main-image img{height:420px}.detail-info h1{font-size:32px}.category-create{flex-direction:column}.product-photo{height:240px}}
 .card-qty{display:flex;align-items:center;justify-content:center;gap:22px;margin-top:12px;padding:8px;border:1px solid #e7e2d9;border-radius:30px;background:#faf9f6}.card-qty button{width:29px;height:29px;border:0;border-radius:50%;background:#20201d;color:#fff;display:grid;place-items:center}
+
+/* Order operations and delivery timeline */
+.admin-module-tabs{display:flex;gap:10px;flex-wrap:wrap;margin:18px 0}
+.admin-module-tabs button{border:1px solid #ddd;border-radius:999px;padding:10px 16px;background:#fff;color:#333}
+.admin-module-tabs button.active{background:#1f1f1f;color:#fff;border-color:#1f1f1f}
+.admin-module-tabs button b{margin-left:6px}
+.order-timeline{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin:22px 0;padding:18px;background:#faf9f6;border-radius:14px}
+.timeline-step{display:flex;align-items:flex-start;gap:9px;color:#888;font-size:13px}
+.timeline-step>div{display:flex;flex-direction:column;gap:4px}
+.timeline-step small{font-size:11px;color:#999}
+.timeline-dot{width:25px;height:25px;flex:0 0 25px;border:1px solid #ccc;border-radius:50%;display:grid;place-items:center;font-size:11px}
+.timeline-step.done{color:#247a4a}
+.timeline-step.done .timeline-dot{background:#247a4a;border-color:#247a4a;color:white}
+@media(max-width:640px){.order-timeline{grid-template-columns:repeat(2,minmax(0,1fr))}.admin-module-tabs button{font-size:12px;padding:8px 11px}}
+
+
+/* Shipway AWB dialog: avoids browser-native prompts after async API calls */
+.shipway-modal{position:relative;width:min(480px,100%);max-height:90vh;overflow:auto;background:#fff;border-radius:18px;padding:26px;box-shadow:0 25px 90px #0004;display:grid;gap:12px}
+.shipway-modal>small{letter-spacing:2px;color:#b45e3e;font-weight:700}
+.shipway-modal h2{font:800 25px Manrope;margin:0}
+.shipway-modal p{margin:0;color:#6d7069;font-size:13px}
+.shipway-modal label{display:grid;gap:6px;font-size:12px;font-weight:600;color:#494b45}
+.shipway-modal input,.shipway-modal select{width:100%;padding:12px;border:1px solid #e4e1d9;border-radius:10px;background:#fff;color:#222}
+.shipway-modal .error{color:#b42318;background:#fff1f0;padding:10px;border-radius:8px}
+.shipway-modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:8px}
+.shipway-modal-actions button:disabled,.shipway-modal .modal-close:disabled{opacity:.55;cursor:not-allowed}
+
+
+/* Product card quantity controls and dedicated order management page */
+/* Cart controls stay compact, side-by-side and responsive on product cards and details */
+.card-cart-actions{display:flex;flex-direction:row;align-items:center;gap:7px;width:100%;min-width:0;margin-top:12px}
+.card-cart-actions .card-qty{display:flex;flex:0 0 auto;align-items:center;justify-content:center;gap:8px;margin:0;padding:5px 8px;min-width:0;white-space:nowrap}
+.card-cart-actions .card-qty button{width:26px;height:26px;flex:0 0 26px}
+.card-cart-actions .card-qty b{min-width:12px;text-align:center;font-size:12px}
+.card-cart-actions .go-to-cart{display:inline-flex;flex:1 1 auto;width:auto;min-width:0;margin:0;padding:9px 10px;align-items:center;justify-content:center;gap:5px;background:#20201d;color:#fff;border-color:#20201d;font-size:11px;line-height:1.2;white-space:nowrap}
+.card-cart-actions .go-to-cart svg{width:14px;height:14px;flex:0 0 auto}
+.card-cart-actions .go-to-cart:hover{background:#c85d3f;border-color:#c85d3f}
+.detail-cart-actions{max-width:440px;margin:22px 0 12px}
+@media(max-width:600px){
+  .product{padding:8px 7px 13px}
+  .grid{gap:12px}
+  .card-cart-actions{gap:5px;margin-top:9px}
+  .card-cart-actions .card-qty{gap:5px;padding:4px 6px}
+  .card-cart-actions .card-qty button{width:21px;height:21px;flex-basis:21px}
+  .card-cart-actions .card-qty button svg{width:12px;height:12px}
+  .card-cart-actions .card-qty b{font-size:10px;min-width:9px}
+  .card-cart-actions .go-to-cart{padding:8px 6px;font-size:10px;gap:3px}
+  .card-cart-actions .go-to-cart svg{width:12px;height:12px}
+  .detail-cart-actions{max-width:100%;gap:9px}
+  .detail-cart-actions .card-qty{gap:10px;padding:6px 10px}
+  .detail-cart-actions .card-qty button{width:28px;height:28px;flex-basis:28px}
+  .detail-cart-actions .go-to-cart{padding:11px 14px;font-size:12px}
+}
+.admin-orders-entry{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:20px 22px;margin:24px 0 30px;border:1px solid #e8e1d6;border-radius:18px;background:#fff;text-decoration:none;color:#24231f;box-shadow:0 12px 32px #30271a08}
+.admin-orders-entry>span:first-child{display:grid;gap:6px}.admin-orders-entry small,.admin-orders-page-head small{font-size:10px;letter-spacing:2px;color:#c85d3f;font-weight:800}.admin-orders-entry>span:last-child{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:800;color:#c85d3f;white-space:nowrap}
+.admin-orders-page-head{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;margin-bottom:24px}.admin-orders-page-head h1{margin:8px 0}.admin-orders-page-head p{color:#777;margin:0;max-width:650px}
+.admin-orders-page .online-orders{margin-top:0}
+@media(max-width:640px){.admin-orders-entry,.admin-orders-page-head{align-items:flex-start;flex-direction:column}.admin-orders-entry>span:last-child{white-space:normal}}
+
+@media(max-width:340px){
+  .grid{grid-template-columns:minmax(0,1fr)}
+  .product{padding:10px 10px 14px}
+  .card-cart-actions .card-qty{gap:9px;padding:5px 9px}
+  .card-cart-actions .card-qty button{width:25px;height:25px;flex-basis:25px}
+  .card-cart-actions .card-qty b{font-size:12px;min-width:12px}
+  .card-cart-actions .go-to-cart{font-size:11px;padding:9px 10px}
+}

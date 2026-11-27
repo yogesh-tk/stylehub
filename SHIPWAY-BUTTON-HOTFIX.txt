@@ -1,0 +1,19 @@
+STYLEHUB Shipway Button Hotfix
+
+What changed:
+- Replaced the native window.prompt() flow with an in-app Shipway AWB dialog.
+- Clicking Push AWB to Shipway opens the dialog immediately.
+- Carrier list loads asynchronously after the dialog opens.
+- If carrier list retrieval fails, the admin can still enter the carrier ID manually.
+- Added AWB and carrier ID validation, loading state, and visible API error feedback.
+
+Apply:
+1. Extract this ZIP over your existing StyleHub project (allow overwrite), or replace client/src/App.jsx and client/src/style.css with these versions.
+2. Keep your existing .env files; do not overwrite them with examples.
+3. Restart the Vite client and Express server.
+4. Open Admin > Online Orders > Push AWB to Shipway.
+
+Note:
+- This only fixes the button interaction. Shipway PushOrderData still requires a real courier AWB and carrier_id.
+- A successful click opens the dialog; a successful Shipway push still depends on valid server environment credentials and correct Shipway account/API configuration.
+- Frontend production build could not be verified in this environment because the copied Vite installation is missing its optional native Rolldown binding.

@@ -45,7 +45,10 @@ export const Order = mongoose.model('Order', new mongoose.Schema({
     address: Object, subtotal: Number, total: Number, paymentMethod: String,
     paymentStatus: { type: String, default: 'pending' },
     paymentId: String,
-    status: { type: String, default: 'placed' },
+    status: { type: String, enum: ['placed','processing','packed','shipped','out_for_delivery','delivered','cancelled','return_requested','return_approved','returned','refund_processing','refunded'], default: 'placed' },
+    statusHistory: [{ status: String, note: String, source: String, at: { type: Date, default: Date.now } }],
+    shipment: { provider: String, carrier: String, carrierId: Number, awb: String, trackingUrl: String, bookedAt: Date, lastSyncedAt: Date },
+    invoiceNumber: String,
     staff: mongoose.Schema.Types.ObjectId
 },
     { timestamps: true }));
@@ -75,3 +78,16 @@ export const Otp = mongoose.model('Otp', new mongoose.Schema({
 export const Category = mongoose.model('Category', new mongoose.Schema({ name: { type: String, required: true, unique: true, trim: true }, active: { type: Boolean, default: true } }, { timestamps: true }));
 export const Review = mongoose.model('Review', new mongoose.Schema({ product: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', required: true }, user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true }, order: { type: mongoose.Schema.Types.ObjectId, ref: 'Order', required: true }, rating: { type: Number, min: 1, max: 5, required: true }, title: String, comment: String, images: [String] }, { timestamps: true }));
 export const PosPayment = mongoose.model('PosPayment', new mongoose.Schema({ qrCodeId: { type: String, required: true, unique: true }, customerName: String, customerPhone: String, staff: mongoose.Schema.Types.ObjectId, items: [Object], total: Number, status: { type: String, default: 'pending' }, order: { type: mongoose.Schema.Types.ObjectId, ref: 'Order' } }, { timestamps: true }));
+
+export const ReturnRequest = mongoose.model('ReturnRequest', new mongoose.Schema({
+  order: { type: mongoose.Schema.Types.ObjectId, ref: 'Order', required: true },
+  user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  items: [{ product: mongoose.Schema.Types.ObjectId, name: String, size: String, quantity: Number }],
+  reason: { type: String, required: true },
+  note: String,
+  images: [String],
+  status: { type: String, enum: ['pending','approved','rejected','pickup_scheduled','picked_up','refund_processing','refunded'], default: 'pending' },
+  adminNote: String,
+  refundAmount: Number,
+  refundReference: String
+}, { timestamps: true }));
