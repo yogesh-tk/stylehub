@@ -1,0 +1,13 @@
+STYLEHUB WISHLIST FIX
+
+What changed:
+- Wishlist reads are normalized and safely parsed from localStorage.
+- Product identity comparison supports MongoDB _id, id, productId, nested product IDs, and string IDs.
+- Heart click explicitly prevents default/bubbling and toggles persisted wishlist data.
+- Home, header count, and Wishlist page synchronize through the same sh-cart-wish-update event; storage events are also observed.
+- Wishlist removal uses the latest stored list rather than a potentially stale React state closure.
+
+Wishlist storage key remains: sh_wish
+Cart storage key remains: sh_cart
+
+No credentials or .env files are included.
