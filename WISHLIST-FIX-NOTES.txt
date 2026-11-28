@@ -1,13 +1,17 @@
-STYLEHUB WISHLIST FIX
+STYLEHUB WISHLIST / CART FIX
 
-What changed:
-- Wishlist reads are normalized and safely parsed from localStorage.
-- Product identity comparison supports MongoDB _id, id, productId, nested product IDs, and string IDs.
-- Heart click explicitly prevents default/bubbling and toggles persisted wishlist data.
-- Home, header count, and Wishlist page synchronize through the same sh-cart-wish-update event; storage events are also observed.
-- Wishlist removal uses the latest stored list rather than a potentially stale React state closure.
+Updated the main client source in client/src:
 
-Wishlist storage key remains: sh_wish
-Cart storage key remains: sh_cart
+- Extracted the shared product card into client/src/components/ProductCard.jsx.
+- Extracted the size-selection/add-to-cart modal into client/src/components/SizePicker.jsx.
+- Centralized wishlist/cart storage and ID normalization in client/src/store.js.
+- Home, product details, and wishlist now use the same wishlist toggle logic and the same product ID comparison.
+- Wishlist and product details calculate quantities across all cart size rows instead of relying on strict object/string equality.
+- Adding a different product from the wishlist resets the size picker selection, preventing the previously selected product's size from leaking into the next product.
+- Cart changes dispatch the shared update event so header counts and page controls stay synchronized.
+- Existing localStorage keys are preserved: sh_wish and sh_cart.
 
-No credentials or .env files are included.
+Important:
+- This update fixes client-side wishlist/cart state handling. It does not clear existing cart or wishlist data.
+- Product IDs and size stock still come from the API/database.
+- If you run the project from a different copy/folder, make sure you use this updated client/src folder.
