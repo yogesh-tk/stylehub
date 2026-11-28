@@ -1,92 +1,71 @@
-// Shared browser store for cart and wishlist. All product IDs are normalized to strings.
-export const productKey = (product) =>
-  String(product?._id ?? product?.id ?? product?.productId ?? product?.product?._id ?? product?.product?.id ?? product?.slug ?? '');
+import { api } from '../api';
+
+// Prefer the cart row's product reference over Mongo's embedded subdocument _id.
+export const productIdOf = value => {
+  const raw = value?.productId ?? value?.product ?? value?._id ?? value?.id ?? value?.slug;
+  if (raw && typeof raw === 'object') return String(raw._id ?? raw.id ?? raw.$oid ?? '');
+  return raw == null ? '' : String(raw);
+};
+export const productKey = product => productIdOf(product) || `${String(product?.name || 'product').trim().toLowerCase()}-${Number(product?.price || 0)}`;
+export const normalizeCart = rows => (Array.isArray(rows) ? rows : []).map(row => ({ ...row, product: productIdOf(row), quantity: Math.max(1, Number(row.quantity) || 1), price: Number(row.price) || 0, stock: Number(row.stock) || 0 })).filter(row => row.product);
+const hasSession = () => Boolean(localStorage.getItem('sh_token'));
+let wishlistQueue = Promise.resolve();
+let cartQueue = Promise.resolve();
+const dispatchUpdate = () => window.dispatchEvent(new Event('sh-cart-wish-update'));
 
 export function readWishlist() {
-  try {
-    const value = JSON.parse(localStorage.getItem('sh_wish') || '[]');
-    return Array.isArray(value) ? value.filter(Boolean) : [];
-  } catch {
-    return [];
-  }
+  try { const value = JSON.parse(localStorage.getItem('sh_wish') || '[]'); return Array.isArray(value) ? value.filter(Boolean) : []; }
+  catch { return []; }
 }
-
-export function writeWishlist(items) {
-  const unique = [];
-  const seen = new Set();
-  for (const item of items || []) {
-    const key = productKey(item);
-    if (!key || seen.has(key)) continue;
-    seen.add(key);
-    unique.push(item);
-  }
+export function writeWishlist(items, { persist = true } = {}) {
+  const unique = [...new Map(items.filter(Boolean).map(item => [productKey(item), item])).values()];
   localStorage.setItem('sh_wish', JSON.stringify(unique));
-  window.dispatchEvent(new Event('sh-cart-wish-update'));
+  dispatchUpdate();
+  if (persist && hasSession()) {
+    const productIds = unique.map(productIdOf).filter(Boolean);
+    const sessionToken = localStorage.getItem('sh_token');
+    wishlistQueue = wishlistQueue.then(() => localStorage.getItem('sh_token') === sessionToken
+      ? api('/user-state/wishlist', { method: 'PUT', body: JSON.stringify({ productIds }) })
+      : null).catch(error => { console.error('Wishlist could not be saved to your account:', error.message); window.dispatchEvent(new CustomEvent('sh-store-error', { detail: error.message })); });
+  }
   return unique;
 }
-
 export function toggleWishlist(product) {
-  const key = productKey(product);
-  if (!key) return readWishlist();
+  if (!product) return readWishlist();
   const current = readWishlist();
-  const exists = current.some(item => productKey(item) === key);
-  return writeWishlist(exists
+  const key = productKey(product);
+  return writeWishlist(current.some(item => productKey(item) === key)
     ? current.filter(item => productKey(item) !== key)
-    : [...current, { ...product, _id: key }]);
+    : [...current, { ...product, _id: productIdOf(product) || key }]);
 }
-
 export function cartNow() {
-  try {
-    const value = JSON.parse(localStorage.getItem('sh_cart') || '[]');
-    return Array.isArray(value) ? value : [];
-  } catch {
-    return [];
+  try { return normalizeCart(JSON.parse(localStorage.getItem('sh_cart') || '[]')); }
+  catch { return []; }
+}
+export function saveCart(items, { persist = true } = {}) {
+  const clean = normalizeCart(items);
+  localStorage.setItem('sh_cart', JSON.stringify(clean));
+  dispatchUpdate();
+  if (persist && hasSession()) {
+    const payload = clean.map(row => ({ product: row.product, size: String(row.size || ''), quantity: Number(row.quantity || 1) }));
+    const sessionToken = localStorage.getItem('sh_token');
+    cartQueue = cartQueue.then(() => localStorage.getItem('sh_token') === sessionToken
+      ? api('/user-state/cart', { method: 'PUT', body: JSON.stringify({ items: payload }) })
+      : null).catch(error => { console.error('Cart could not be saved to your account:', error.message); window.dispatchEvent(new CustomEvent('sh-store-error', { detail: error.message })); });
   }
+  return clean;
 }
 
-export function saveCart(items) {
-  const normalized = (items || []).map(item => ({
-    ...item,
-    product: String(item.product ?? item._id ?? item.id ?? ''),
-    quantity: Math.max(1, Number(item.quantity) || 1),
-    stock: Number(item.stock ?? 99)
-  })).filter(item => item.product);
-  localStorage.setItem('sh_cart', JSON.stringify(normalized));
-  window.dispatchEvent(new Event('sh-cart-wish-update'));
-  return normalized;
+// The database is canonical after login; localStorage is only a fast UI cache.
+export async function hydrateUserState() {
+  if (!hasSession()) return { wishlist: [], cart: [] };
+  const state = await api('/user-state');
+  writeWishlist(state.wishlist || [], { persist: false });
+  saveCart(state.cart || [], { persist: false });
+  return state;
 }
-
-export function getCartQuantity(cart, product) {
-  const key = productKey(product);
-  return (cart || cartNow()).reduce(
-    (sum, item) => sum + (String(item.product) === key ? Number(item.quantity) || 0 : 0), 0
-  );
-}
-
-// Returns null when the product is not in the cart (the UI should open the size picker).
-export function changeProductQuantity(product, delta, currentCart = cartNow()) {
-  const key = productKey(product);
-  const rows = currentCart
-    .map((item, index) => ({ item, index }))
-    .filter(row => String(row.item.product) === key);
-  if (!rows.length) return null;
-
-  let target;
-  if (delta > 0) {
-    target = rows.find(({ item }) => Number(item.quantity || 0) < Number(item.stock || 99));
-    if (!target) return currentCart;
-    const next = currentCart.map((item, index) =>
-      index === target.index ? { ...item, quantity: Number(item.quantity || 0) + 1 } : item
-    );
-    return saveCart(next);
-  }
-
-  target = [...rows].reverse().find(({ item }) => Number(item.quantity || 0) > 0);
-  if (!target) return currentCart;
-  const next = currentCart
-    .map((item, index) => index === target.index
-      ? { ...item, quantity: Number(item.quantity || 0) - 1 }
-      : item)
-    .filter(item => Number(item.quantity) > 0);
-  return saveCart(next);
+export function clearLocalUserState() {
+  localStorage.removeItem('sh_wish');
+  localStorage.removeItem('sh_cart');
+  dispatchUpdate();
 }

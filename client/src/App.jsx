@@ -1,20 +1,45 @@
 import { Menu, X } from 'lucide-react';
 import React, { useEffect, useState } from 'react'; import { Routes, Route, Link, useNavigate, useParams } from 'react-router-dom'; import { ShoppingBag, Heart, User, ArrowRight, Search, LogOut, Download, Trash2, Plus, Minus, ScanLine, Eye, EyeOff, ImagePlus, Printer, Search as SearchIcon, CheckCircle2 } from 'lucide-react'; import { api, BASE } from './api';
-import ProductCard from './components/ProductCard.jsx';
-import SizePicker from './components/SizePicker.jsx';
-import { money } from './utils.js';
-import { productKey, readWishlist, toggleWishlist, cartNow, saveCart, getCartQuantity, changeProductQuantity } from './store.js';
+import ProductCard from './components/ProductCard';
+import SizePicker from './components/SizePicker';
+import { cartNow, saveCart, normalizeCart, readWishlist, writeWishlist, toggleWishlist, productIdOf, productKey, hydrateUserState, clearLocalUserState } from './utils/store';
+const money = n => '₹' + Number(n || 0).toLocaleString('en-IN');
+
 
 function useAuth() {
     const [user, setUser] = useState(() => JSON.parse(localStorage.getItem('sh_user') || 'null'));
+    const [ready, setReady] = useState(() => !localStorage.getItem('sh_token'));
+    useEffect(() => {
+        if (!localStorage.getItem('sh_token')) { setReady(true); return; }
+        let alive = true;
+        hydrateUserState().catch(error => console.error('Could not load account cart/wishlist:', error.message))
+            .finally(() => { if (alive) setReady(true); });
+        return () => { alive = false; };
+    }, []);
     return {
-        user, login: d => {
+        user, ready,
+        login: async d => {
+            // Preserve this same account's old browser-only data once, if its DB state is still empty.
+            let previousUser = null;
+            try { previousUser = JSON.parse(localStorage.getItem('sh_user') || 'null'); } catch {}
+            const sameAccount = previousUser?.id && String(previousUser.id) === String(d.user.id);
+            const legacyWishlist = sameAccount ? readWishlist() : [];
+            const legacyCart = sameAccount ? cartNow() : [];
             localStorage.setItem('sh_token', d.token);
             localStorage.setItem('sh_user', JSON.stringify(d.user));
-            setUser(d.user)
-        }, logout: () => {
-            localStorage.clear();
-            setUser(null)
+            if (!sameAccount) clearLocalUserState();
+            const state = await api('/user-state');
+            if (!(state.wishlist || []).length && legacyWishlist.length) writeWishlist(legacyWishlist);
+            else writeWishlist(state.wishlist || [], { persist: false });
+            if (!(state.cart || []).length && legacyCart.length) saveCart(legacyCart);
+            else saveCart(state.cart || [], { persist: false });
+            setUser(d.user);
+        },
+        logout: () => {
+            localStorage.removeItem('sh_token');
+            localStorage.removeItem('sh_user');
+            clearLocalUserState();
+            setUser(null);
         }
     }
 }
@@ -27,17 +52,12 @@ function useStoreCounts() {
 
     useEffect(() => {
         const updateCounts = () => {
-            const cart = JSON.parse(
-                localStorage.getItem('sh_cart') || '[]'
-            );
-
-            const wish = JSON.parse(
-                localStorage.getItem('sh_wish') || '[]'
-            );
+            const cart = normalizeCart(cartNow());
+            const wish = readWishlist();
 
             setCounts({
                 cart: cart.reduce(
-                    (total, item) => total + item.quantity, 0
+                    (total, item) => total + (Number(item.quantity) || 0), 0
                 ),
                 wishlist: wish.length
             });
@@ -136,7 +156,7 @@ function Home() {
  const navigate=useNavigate();
  const [ps,setPs]=useState([]),[cats,setCats]=useState([]),[s,S]=useState(''),[cat,C]=useState('All'),[sortBy,SortBy]=useState('popular'),[wish,W]=useState(readWishlist),[cart,CartState]=useState(cartNow()),[picker,Pick]=useState(null);
  useEffect(()=>{api('/products').then(setPs).catch(()=>{});api('/categories').then(setCats).catch(()=>{});const sync=()=>{CartState(cartNow());W(readWishlist())};window.addEventListener('sh-cart-wish-update',sync);sync();return()=>window.removeEventListener('sh-cart-wish-update',sync);},[]);
- const toggleWish = p => W(toggleWishlist(p));
+ const toggleWish=p=>{const next=toggleWishlist(p);W(next)};
  const filtered=ps.filter(p=>(!s||p.name.toLowerCase().includes(s.toLowerCase()))&&(cat==='All'||p.category===cat));
  const shown=[...filtered].sort((a,b)=>{
   if(sortBy==='price-low')return Number(a.price||0)-Number(b.price||0);
@@ -145,13 +165,13 @@ function Home() {
   const popularity=p=>Number(p.reviewCount||p.reviewsCount||p.soldCount||p.salesCount||0)+(Number(p.averageRating||p.rating||0)*10);
   return popularity(b)-popularity(a);
  });
- return <><section className="hero"><div><small>THE NEW SEASON / STYLEHUB EDIT</small><h1>Dress sharp.<br/><i>Live bold.</i></h1><p>Modern essentials for everyday confidence. Discover pieces made to move with you.</p><a className="btn" href="#shop">Explore collection <ArrowRight size={17}/></a><p className="micro">01 — CURATED FOR EVERYDAY</p></div><img src="https://images.unsplash.com/photo-1516257984-b1b4d707412e?w=1200" alt="StyleHub collection"/></section><div className="ticker">BUILT FOR YOUR EVERYDAY　 ✳　 PREMIUM FITS　 ✳　 MADE TO MOVE</div><main id="shop"><div className="heading"><div><small>THE STYLEHUB EDIT</small><h2>Shop the collection<span>.</span></h2></div><p>Considered pieces. Everyday confidence.</p></div><div className="category-strip flex items-center gap-2 overflow-x-auto"><button className={cat==='All'?'active':''} onClick={()=>C('All')}>All products</button>{cats.map(x=><button key={x._id} className={cat===x.name?'active':''} onClick={()=>C(x.name)}>{x.name}</button>)}</div><div className="filters"><label><Search/><input placeholder="Search products..." value={s} onChange={e=>S(e.target.value)}/></label><select aria-label="Filter by category" value={cat} onChange={e=>C(e.target.value)}><option value="All">All categories</option>{cats.map(x=><option key={x._id} value={x.name}>{x.name}</option>)}</select><select aria-label="Sort products" value={sortBy} onChange={e=>SortBy(e.target.value)}><option value="popular">Popularity</option><option value="price-low">Price: Low to High</option><option value="price-high">Price: High to Low</option><option value="newest">Newest</option></select></div><div className="grid">{shown.map(p=><ProductCard key={productKey(p)} product={p} onToggleWishlist={toggleWish} isWished={wish.some(x=>productKey(x)===productKey(p))} quantity={getCartQuantity(cart,p)} onAddToCart={Pick} onIncrement={product=>{const next=changeProductQuantity(product,1,cart);if(next===null){Pick(product);return;}CartState(next)}} onDecrement={product=>{const next=changeProductQuantity(product,-1,cart);if(next!==null)CartState(next)}} onGoToCart={()=>navigate('/cart')}/>)}</div>{!shown.length&&<p className="empty">No products found in this collection.</p>}</main><section className="promise"><div><small>THE STYLEHUB PROMISE</small><h2>Good clothes.<br/><i>Good energy.</i></h2></div><p>✳ Thoughtful everyday essentials<br/><br/>✳ Easy orders & reliable delivery<br/><br/>✳ Fits worth coming back for</p></section><footer><b className="logo">STYLE<span>HUB.</span></b><small>Everyday style, made simple. © 2026 STYLEHUB</small></footer><SizePicker product={picker} onClose={()=>Pick(null)}/></>
+ return <><section className="hero"><div><small>THE NEW SEASON / STYLEHUB EDIT</small><h1>Dress sharp.<br/><i>Live bold.</i></h1><p>Modern essentials for everyday confidence. Discover pieces made to move with you.</p><a className="btn" href="#shop">Explore collection <ArrowRight size={17}/></a><p className="micro">01 — CURATED FOR EVERYDAY</p></div><img src="https://images.unsplash.com/photo-1516257984-b1b4d707412e?w=1200" alt="StyleHub collection"/></section><div className="ticker">BUILT FOR YOUR EVERYDAY　 ✳　 PREMIUM FITS　 ✳　 MADE TO MOVE</div><main id="shop"><div className="heading"><div><small>THE STYLEHUB EDIT</small><h2>Shop the collection<span>.</span></h2></div><p>Considered pieces. Everyday confidence.</p></div><div className="category-strip flex items-center gap-2 overflow-x-auto"><button className={cat==='All'?'active':''} onClick={()=>C('All')}>All products</button>{cats.map(x=><button key={x._id} className={cat===x.name?'active':''} onClick={()=>C(x.name)}>{x.name}</button>)}</div><div className="filters"><label><Search/><input placeholder="Search products..." value={s} onChange={e=>S(e.target.value)}/></label><select aria-label="Filter by category" value={cat} onChange={e=>C(e.target.value)}><option value="All">All categories</option>{cats.map(x=><option key={x._id} value={x.name}>{x.name}</option>)}</select><select aria-label="Sort products" value={sortBy} onChange={e=>SortBy(e.target.value)}><option value="popular">Popularity</option><option value="price-low">Price: Low to High</option><option value="price-high">Price: High to Low</option><option value="newest">Newest</option></select></div><div className="grid">{shown.map(p=><ProductCard money={money} key={p._id} p={p} wish={toggleWish} active={wish.some(x=>productKey(x)===productKey(p))} quantity={cart.filter(x=>productIdOf(x)===productIdOf(p)).reduce((n,x)=>n+Number(x.quantity||0),0)} onAdd={Pick} onIncrement={product=>{const row=cart.find(x=>productIdOf(x)===productIdOf(product));if(!row)return Pick(product);if(row.quantity>=Number(row.stock||99))return;const next=cart.map(x=>x===row?{...x,quantity:Number(x.quantity)+1}:x);CartState(next);saveCart(next)}} onDecrement={product=>{const row=cart.find(x=>productIdOf(x)===productIdOf(product));if(!row)return;const next=row.quantity<=1?cart.filter(x=>x!==row):cart.map(x=>x===row?{...x,quantity:x.quantity-1}:x);CartState(next);saveCart(next)}} onGoCart={()=>navigate('/cart')}/>)}</div>{!shown.length&&<p className="empty">No products found in this collection.</p>}</main><section className="promise"><div><small>THE STYLEHUB PROMISE</small><h2>Good clothes.<br/><i>Good energy.</i></h2></div><p>✳ Thoughtful everyday essentials<br/><br/>✳ Easy orders & reliable delivery<br/><br/>✳ Fits worth coming back for</p></section><footer><b className="logo">STYLE<span>HUB.</span></b><small>Everyday style, made simple. © 2026 STYLEHUB</small></footer><SizePicker money={money} product={picker} onClose={()=>Pick(null)}/></>
 }
 function ProductDetails(){
  const {id}=useParams();const navigate=useNavigate();
  const [p,P]=useState(null),[reviews,R]=useState({reviews:[],average:0,count:0}),[img,I]=useState(0),[picker,Pick]=useState(null),[err,E]=useState(''),[cart,CartState]=useState(cartNow()),[wish,W]=useState(readWishlist());
  useEffect(()=>{
-  api('/products').then(a=>P(a.find(x=>x._id===id)||null)).catch(e=>E(e.message));
+  api('/products').then(a=>P(a.find(x=>productIdOf(x)===String(id))||null)).catch(e=>E(e.message));
   api('/reviews/product/'+id).then(R).catch(()=>{});
   const sync=()=>{CartState(cartNow());W(readWishlist())};
   window.addEventListener('sh-cart-wish-update',sync);
@@ -162,25 +182,29 @@ function ProductDetails(){
  const imgs=p.images?.length?p.images:[p.image].filter(Boolean);
  const isWished=wish.some(x=>productKey(x)===productKey(p));
  const toggleDetailWish=()=>W(toggleWishlist(p));
- const quantity = getCartQuantity(cart, p);
- const increment = () => {
-   const next = changeProductQuantity(p, 1, cart);
-   if (next === null) { Pick(p); return; }
-   CartState(next);
+ const productRows=cart.filter(x=>productIdOf(x)===productIdOf(p));
+ const quantity=productRows.reduce((n,x)=>n+Number(x.quantity||0),0);
+ const increment=()=>{
+  const row=productRows.find(x=>Number(x.quantity||0)<Number(x.stock||99));
+  if(!row){if(!productRows.length)Pick(p);return;}
+  const next=cart.map(x=>x===row?{...x,quantity:Number(x.quantity)+1}:x);
+  CartState(next);saveCart(next);
  };
- const decrement = () => {
-   const next = changeProductQuantity(p, -1, cart);
-   if (next !== null) CartState(next);
+ const decrement=()=>{
+  const row=[...productRows].reverse().find(x=>Number(x.quantity||0)>0);
+  if(!row)return;
+  const next=row.quantity<=1?cart.filter(x=>x!==row):cart.map(x=>x===row?{...x,quantity:x.quantity-1}:x);
+  CartState(next);saveCart(next);
  };
- return <main className="page product-detail mx-auto max-w-7xl px-6 py-10"><div className="detail-gallery"><div className="detail-thumbs">{imgs.map((x,i)=><button className={img===i?'active':''} onClick={()=>I(i)} key={i}><img src={x}/></button>)}</div><div className="detail-main-image"><img src={imgs[img]||p.image} alt={p.name}/></div></div><section className="detail-info"><div className="detail-title-row"><div><small>{p.category} / STYLEHUB</small><h1>{p.name}</h1></div><button type="button" className={'heart detail-heart '+(isWished?'heart-active':'')} onClick={toggleDetailWish} aria-label={isWished?'Remove from wishlist':'Add to wishlist'} title={isWished?'Remove from wishlist':'Add to wishlist'}><Heart size={21} fill={isWished?'currentColor':'none'}/></button></div><div className="review-summary">⭐ {reviews.average.toFixed(1)} · {reviews.count} verified reviews</div><h2>{money(p.price)}</h2><p>{p.description}</p><div className="detail-size"><b>Available sizes</b><div>{(p.sizes||[]).map(z=><span className={!z.stock?'sold':''} key={z.size}>{z.size} {z.stock?'':'· Out of stock'}</span>)}</div></div>{quantity>0?<div className="card-cart-actions detail-cart-actions"><div className="card-qty"><button aria-label="Decrease quantity" onClick={decrement}><Minus size={15}/></button><b>{quantity}</b><button aria-label="Increase quantity" onClick={increment}><Plus size={15}/></button></div><button className="outline go-to-cart" onClick={()=>navigate('/cart')}>Go to Cart <ArrowRight size={15}/></button></div>:<button className="btn" onClick={()=>Pick(p)}>Choose size & add to cart <ShoppingBag/></button>}<p className="detail-note">Secure checkout · Easy order tracking · Quality essentials</p></section><section className="review-section"><small>THE COMMUNITY</small><h2>Customer reviews<span>.</span></h2>{reviews.reviews.map(r=><article className="review-card" key={r._id}><b>{'★'.repeat(r.rating)}{'☆'.repeat(5-r.rating)}</b><h3>{r.title||'Verified purchase'}</h3><p>{r.comment}</p><small>{r.user?.name||'Customer'} · {new Date(r.createdAt).toLocaleDateString('en-IN')}</small><div className="review-images">{(r.images||[]).map((x,i)=><img key={i} src={x}/>)}</div></article>)}{!reviews.count&&<p>No reviews yet. Be the first to share your experience after purchase.</p>}</section><SizePicker product={picker} onClose={()=>Pick(null)} onAdded={()=>CartState(cartNow())}/></main>
+ return <main className="page product-detail mx-auto max-w-7xl px-6 py-10"><div className="detail-gallery"><div className="detail-thumbs">{imgs.map((x,i)=><button className={img===i?'active':''} onClick={()=>I(i)} key={i}><img src={x}/></button>)}</div><div className="detail-main-image"><img src={imgs[img]||p.image} alt={p.name}/></div></div><section className="detail-info"><div className="detail-title-row"><div><small>{p.category} / STYLEHUB</small><h1>{p.name}</h1></div><button type="button" className={'heart detail-heart '+(isWished?'heart-active':'')} onClick={toggleDetailWish} aria-label={isWished?'Remove from wishlist':'Add to wishlist'} title={isWished?'Remove from wishlist':'Add to wishlist'}><Heart size={21} fill={isWished?'currentColor':'none'}/></button></div><div className="review-summary">⭐ {reviews.average.toFixed(1)} · {reviews.count} verified reviews</div><h2>{money(p.price)}</h2><p>{p.description}</p><div className="detail-size"><b>Available sizes</b><div>{(p.sizes||[]).map(z=><span className={!z.stock?'sold':''} key={z.size}>{z.size} {z.stock?'':'· Out of stock'}</span>)}</div></div>{quantity>0?<div className="card-cart-actions detail-cart-actions"><div className="card-qty"><button aria-label="Decrease quantity" onClick={decrement}><Minus size={15}/></button><b>{quantity}</b><button aria-label="Increase quantity" onClick={increment}><Plus size={15}/></button></div><button className="outline go-to-cart" onClick={()=>navigate('/cart')}>Go to Cart <ArrowRight size={15}/></button></div>:<button className="btn" onClick={()=>Pick(p)}>Choose size & add to cart <ShoppingBag/></button>}<p className="detail-note">Secure checkout · Easy order tracking · Quality essentials</p></section><section className="review-section"><small>THE COMMUNITY</small><h2>Customer reviews<span>.</span></h2>{reviews.reviews.map(r=><article className="review-card" key={r._id}><b>{'★'.repeat(r.rating)}{'☆'.repeat(5-r.rating)}</b><h3>{r.title||'Verified purchase'}</h3><p>{r.comment}</p><small>{r.user?.name||'Customer'} · {new Date(r.createdAt).toLocaleDateString('en-IN')}</small><div className="review-images">{(r.images||[]).map((x,i)=><img key={i} src={x}/>)}</div></article>)}{!reviews.count&&<p>No reviews yet. Be the first to share your experience after purchase.</p>}</section><SizePicker money={money} product={picker} onClose={()=>Pick(null)} onAdded={()=>CartState(cartNow())}/></main>
 }
 function PasswordField({ value, onChange, placeholder = 'Password' }) { const [show, S] = useState(false); return <><div className="password-wrap"><input type={show ? 'text' : 'password'} value={value} onChange={onChange} placeholder={placeholder} required /><button type="button" className="password-toggle" onClick={() => S(!show)} aria-label={show ? 'Hide password' : 'Show password'}>{show ? <EyeOff size={18} /> : <Eye size={18} />}</button></div><small className="password-help">Password must contain at least 8 characters and one special symbol (example: @, #, !, $).</small></> }
 function Auth({ a, mode }) {
     const [step, ST] = useState('form'), [channel, CH] = useState('email'), [f, F] = useState({ name: '', email: '', phone: '', identifier: '', password: '', code: '', newPassword: '' }), [err, E] = useState(''), [busy, B] = useState(false), [show, S] = useState(false); const n = useNavigate();
     const set = (k, v) => F(old => ({ ...old, [k]: v })); const identifier = channel === 'email' ? f.email : f.phone;
     const sendRegister = async e => { e.preventDefault(); E(''); B(true); try { await api('/auth/send-register-otp', { method: 'POST', body: JSON.stringify({ name: f.name, email: f.email, phone: f.phone, channel }) }); ST('verify') } catch (x) { E(x.message) } finally { B(false) } };
-    const verifyRegister = async e => { e.preventDefault(); E(''); B(true); try { const d = await api('/auth/verify-register-otp', { method: 'POST', body: JSON.stringify({ ...f, channel }) }); a.login(d); n('/') } catch (x) { E(x.message) } finally { B(false) } };
-    const login = async e => { e.preventDefault(); E(''); B(true); try { a.login(await api('/auth/login', { method: 'POST', body: JSON.stringify({ identifier: f.identifier, password: f.password }) })); n('/') } catch (x) { E(x.message) } finally { B(false) } };
+    const verifyRegister = async e => { e.preventDefault(); E(''); B(true); try { const d = await api('/auth/verify-register-otp', { method: 'POST', body: JSON.stringify({ ...f, channel }) }); await a.login(d); n('/') } catch (x) { E(x.message) } finally { B(false) } };
+    const login = async e => { e.preventDefault(); E(''); B(true); try { await a.login(await api('/auth/login', { method: 'POST', body: JSON.stringify({ identifier: f.identifier, password: f.password }) })); n('/') } catch (x) { E(x.message) } finally { B(false) } };
     const sendReset = async e => { e.preventDefault(); E(''); B(true); try { await api('/auth/forgot-password/send-otp', { method: 'POST', body: JSON.stringify({ identifier: f.identifier, channel }) }); ST('reset') } catch (x) { E(x.message) } finally { B(false) } };
     const reset = async e => { e.preventDefault(); E(''); B(true); try { await api('/auth/forgot-password/reset', { method: 'POST', body: JSON.stringify({ identifier: f.identifier, channel, code: f.code, newPassword: f.newPassword }) }); E('Password changed successfully. You can login now.'); ST('form') } catch (x) { E(x.message) } finally { B(false) } };
     return <main className="auth"><form onSubmit={mode === 'register' ? (step === 'form' ? sendRegister : verifyRegister) : mode === 'forgot' ? (step === 'form' ? sendReset : reset) : login}>
@@ -195,56 +219,14 @@ function Auth({ a, mode }) {
     </form></main>
 }
 function Cart(){const [it,I]=useState(cartNow());const n=useNavigate();const total=it.reduce((a,x)=>a+x.price*x.quantity,0);const save=v=>{I(v);saveCart(v)};const qty=(item,d)=>save(it.map(x=>x.product===item.product&&x.size===item.size?{...x,quantity:Math.max(1,Math.min(Number(x.stock||99),x.quantity+d))}:x));return <main className="page"><h1>Your bag<span>.</span></h1>{it.map((x,i)=><div className="cartrow" key={x.product+'-'+x.size}><img src={x.image}/><div><b>{x.name}</b><small>Size {x.size} · {money(x.price)}</small></div><div className="qty-control"><button onClick={()=>qty(x,-1)}><Minus/></button><b>{x.quantity}</b><button disabled={x.quantity>=Number(x.stock||99)} onClick={()=>qty(x,1)}><Plus/></button></div><b>{money(x.price*x.quantity)}</b><button onClick={()=>save(it.filter((_,j)=>j!==i))}><Trash2/></button></div>)}{!it.length&&<p>Your bag is empty. Explore the collection to find your fit.</p>}<h3 className="total">Subtotal: {money(total)}</h3><button className="btn" disabled={!it.length} onClick={()=>n('/checkout')}>Checkout <ArrowRight/></button></main>}
-function Wishlist() {
- const navigate = useNavigate();
- const [items, setItems] = useState(readWishlist);
- const [picker, setPicker] = useState(null);
- const [cart, setCart] = useState(cartNow);
-
- useEffect(() => {
-   const sync = () => { setCart(cartNow()); setItems(readWishlist()); };
-   window.addEventListener('sh-cart-wish-update', sync);
-   sync();
-   return () => window.removeEventListener('sh-cart-wish-update', sync);
- }, []);
-
- const remove = product => setItems(toggleWishlist(product));
- const updateQuantity = (product, delta) => {
-   const next = changeProductQuantity(product, delta, cart);
-   if (next === null) {
-     if (delta > 0) setPicker(product);
-     return;
-   }
-   setCart(next);
- };
-
- return (
-  <main className="page">
-   <div className="heading">
-    <div><small>SAVED FOR LATER</small><h1>Wishlist<span>.</span></h1></div>
-    <p>{items.length} saved item{items.length === 1 ? '' : 's'}</p>
-   </div>
-   <div className="grid">
-    {items.map(product => (
-     <ProductCard
-      key={productKey(product)}
-      product={product}
-      isWished
-      onToggleWishlist={remove}
-      quantity={getCartQuantity(cart, product)}
-      onAddToCart={setPicker}
-      onIncrement={item => updateQuantity(item, 1)}
-      onDecrement={item => updateQuantity(item, -1)}
-      onGoToCart={() => navigate('/cart')}
-     />
-    ))}
-   </div>
-   {!items.length && <p>No saved items. Explore the collection and tap the heart to save products.</p>}
-   <SizePicker product={picker} onClose={() => setPicker(null)} onAdded={() => setCart(cartNow())} />
-  </main>
- );
-}
-function Checkout({ a }) { const [ad, A] = useState({ fullName: a.user?.name || '', phone: a.user?.phone || '', line1: '', line2: '', city: '', state: 'Tamil Nadu', pincode: '' }), [err, E] = useState(''); const n = useNavigate(), items = JSON.parse(localStorage.getItem('sh_cart') || '[]'), total = items.reduce((v, x) => v + x.price * x.quantity, 0); const pay = async e => { e.preventDefault(); try { const p = await api('/orders/create-payment', { method: 'POST', body: JSON.stringify({ items: items.map(x => ({ product: x.product, size: x.size, quantity: x.quantity })) }) }); const rz = new window.Razorpay({ key: p.key, amount: p.amount, currency: p.currency, order_id: p.id, name: 'STYLEHUB', description: 'Clothing order', prefill: { name: ad.fullName, contact: ad.phone }, handler: async response => { try { await api('/orders/verify-payment', { method: 'POST', body: JSON.stringify({ ...response, items: items.map(x => ({ product: x.product, size: x.size, quantity: x.quantity })), address: ad }) }); localStorage.removeItem('sh_cart'); n('/orders') } catch (x) { E(x.message) } } }); rz.open() } catch (x) { E(x.message) } }; return <main className="page"><h1>Checkout<span>.</span></h1><form className="checkout" onSubmit={pay}><section className="panel"><h2>Delivery address</h2>{Object.keys(ad).map(k => <label>{k}<input required={k !== 'line2'} value={ad[k]} onChange={e => A({ ...ad, [k]: e.target.value })} /></label>)}</section><section className="panel"><h2>Order summary</h2>{items.map(x => <p>{x.name} · {x.size} × {x.quantity} <b>{money(x.price * x.quantity)}</b></p>)}<hr /><h3>Total {money(total)}</h3><small>Secure Razorpay checkout. Order is confirmed after server verification.</small>{err && <p className="error">{err}</p>}<button className="btn" disabled={!items.length}>Pay {money(total)}</button></section></form></main> }
+function Wishlist(){
+ const navigate=useNavigate();
+ const [it,I]=useState(readWishlist),[picker,Pick]=useState(null),[cart,CartState]=useState(cartNow());
+ useEffect(()=>{const sync=()=>{CartState(cartNow());I(readWishlist())};window.addEventListener('sh-cart-wish-update',sync);sync();return()=>window.removeEventListener('sh-cart-wish-update',sync)},[]);
+ const remove=x=>{const key=productKey(x);const v=readWishlist().filter(y=>productKey(y)!==key);writeWishlist(v);I(v)};
+ const changeQty=(product,delta)=>{const row=cart.find(x=>productIdOf(x)===productIdOf(product));if(!row){if(delta>0)Pick(product);return;}if(delta>0&&row.quantity>=Number(row.stock||99))return;const next=Number(row.quantity)+delta<=0?cart.filter(x=>x!==row):cart.map(x=>x===row?{...x,quantity:Number(x.quantity)+delta}:x);CartState(next);saveCart(next)};
+ return <main className="page"><div className="heading"><div><small>SAVED FOR LATER</small><h1>Wishlist<span>.</span></h1></div><p>{it.length} saved item{it.length===1?'':'s'}</p></div><div className="grid">{it.map(p=><ProductCard money={money} key={productKey(p)} p={p} active wish={remove} onAdd={Pick} quantity={cart.filter(x=>productIdOf(x)===productIdOf(p)).reduce((n,x)=>n+Number(x.quantity||0),0)} onIncrement={product=>changeQty(product,1)} onDecrement={product=>changeQty(product,-1)} onGoCart={()=>navigate('/cart')}/>)}</div>{!it.length&&<p>No saved items. Explore the collection and tap the heart to save products.</p>}<SizePicker money={money} product={picker} onClose={()=>Pick(null)}/></main>}
+function Checkout({ a }) { const [ad, A] = useState({ fullName: a.user?.name || '', phone: a.user?.phone || '', line1: '', line2: '', city: '', state: 'Tamil Nadu', pincode: '' }), [err, E] = useState(''); const n = useNavigate(), items = JSON.parse(localStorage.getItem('sh_cart') || '[]'), total = items.reduce((v, x) => v + x.price * x.quantity, 0); const pay = async e => { e.preventDefault(); try { const p = await api('/orders/create-payment', { method: 'POST', body: JSON.stringify({ items: items.map(x => ({ product: x.product, size: x.size, quantity: x.quantity })) }) }); const rz = new window.Razorpay({ key: p.key, amount: p.amount, currency: p.currency, order_id: p.id, name: 'STYLEHUB', description: 'Clothing order', prefill: { name: ad.fullName, contact: ad.phone }, handler: async response => { try { await api('/orders/verify-payment', { method: 'POST', body: JSON.stringify({ ...response, items: items.map(x => ({ product: x.product, size: x.size, quantity: x.quantity })), address: ad }) }); saveCart([]); n('/orders') } catch (x) { E(x.message) } } }); rz.open() } catch (x) { E(x.message) } }; return <main className="page"><h1>Checkout<span>.</span></h1><form className="checkout" onSubmit={pay}><section className="panel"><h2>Delivery address</h2>{Object.keys(ad).map(k => <label>{k}<input required={k !== 'line2'} value={ad[k]} onChange={e => A({ ...ad, [k]: e.target.value })} /></label>)}</section><section className="panel"><h2>Order summary</h2>{items.map(x => <p>{x.name} · {x.size} × {x.quantity} <b>{money(x.price * x.quantity)}</b></p>)}<hr /><h3>Total {money(total)}</h3><small>Secure Razorpay checkout. Order is confirmed after server verification.</small>{err && <p className="error">{err}</p>}<button className="btn" disabled={!items.length}>Pay {money(total)}</button></section></form></main> }
 function ReviewForm({productId,orderId}){const [rating,R]=useState(5),[title,T]=useState(''),[comment,C]=useState(''),[files,F]=useState([]),[msg,M]=useState('');const submit=async e=>{e.preventDefault();try{const d=new FormData();d.append('rating',rating);d.append('title',title);d.append('comment',comment);d.append('orderId',orderId);files.slice(0,3).forEach(f=>d.append('reviewImages',f));await api('/reviews/'+productId,{method:'POST',body:d});M('Review submitted. Thank you!');}catch(x){M(x.message)}};return <form className="review-form" onSubmit={submit}><b>Share your fit review</b><div className="rating-picker">{[1,2,3,4,5].map(n=><button type="button" key={n} onClick={()=>R(n)} className={n<=rating?'chosen':''}>★</button>)}</div><input placeholder="Review title (optional)" value={title} onChange={e=>T(e.target.value)}/><textarea placeholder="Tell others about the fit, fabric and quality..." value={comment} onChange={e=>C(e.target.value)}/><label>Add photos (up to 3)<input type="file" accept="image/png,image/jpeg,image/webp" multiple onChange={e=>F(Array.from(e.target.files||[]).slice(0,3))}/></label><button className="outline">Submit review</button>{msg&&<small>{msg}</small>}</form>}
 function OrderTimeline({order}) {
  const steps=['placed','processing','packed','shipped','out_for_delivery','delivered'];
@@ -439,4 +421,4 @@ function POS() {
                 {completed && <button className="pos-new-bill" onClick={() => { Done(null); QR(null); U({ customerName: '', customerPhone: '' }); M('cash'); G('New bill started') }}>Start new bill</button>}
             </aside></section><p className="pos-footnote">Tip: A USB barcode scanner behaves like a keyboard. Click the barcode field once, then scan. Manual search works even without a scanner.</p></main>
 }
-export default function App() { const a = useAuth(); return <><Header a={a} /><Routes><Route path="/" element={<Home />} /><Route path="/product/:id" element={<ProductDetails />} /><Route path="/login" element={<Auth a={a} mode="login" />} /><Route path="/register" element={<Auth a={a} mode="register" />} /><Route path="/forgot-password" element={<Auth a={a} mode="forgot" />} /><Route path="/cart" element={<Cart />} /><Route path="/wishlist" element={<Wishlist />} /><Route path="/checkout" element={a.user ? <Checkout a={a} /> : <Auth a={a} mode="login" />} /><Route path="/orders" element={a.user ? <Orders /> : <Auth a={a} mode="login" />} /><Route path="/admin" element={a.user?.role === 'admin' ? <Admin /> : <Auth a={a} mode="login" />} /><Route path="/admin/orders" element={a.user?.role === 'admin' ? <AdminOrdersPage /> : <Auth a={a} mode="login" />} /><Route path="/pos" element={['admin', 'staff'].includes(a.user?.role) ? <POS /> : <Auth a={a} mode="login" />} /></Routes></> }
+export default function App() { const a = useAuth(); useEffect(() => { const showSaveError = event => window.alert('Wishlist / Cart database save failed: ' + (event.detail || 'Please check your API connection and login.')); window.addEventListener('sh-store-error', showSaveError); return () => window.removeEventListener('sh-store-error', showSaveError); }, []); if (!a.ready) return <main className="page"><p>Loading your StyleHub account...</p></main>; return <><Header a={a} /><Routes><Route path="/" element={<Home />} /><Route path="/product/:id" element={<ProductDetails />} /><Route path="/login" element={<Auth a={a} mode="login" />} /><Route path="/register" element={<Auth a={a} mode="register" />} /><Route path="/forgot-password" element={<Auth a={a} mode="forgot" />} /><Route path="/cart" element={<Cart />} /><Route path="/wishlist" element={<Wishlist />} /><Route path="/checkout" element={a.user ? <Checkout a={a} /> : <Auth a={a} mode="login" />} /><Route path="/orders" element={a.user ? <Orders /> : <Auth a={a} mode="login" />} /><Route path="/admin" element={a.user?.role === 'admin' ? <Admin /> : <Auth a={a} mode="login" />} /><Route path="/admin/orders" element={a.user?.role === 'admin' ? <AdminOrdersPage /> : <Auth a={a} mode="login" />} /><Route path="/pos" element={['admin', 'staff'].includes(a.user?.role) ? <POS /> : <Auth a={a} mode="login" />} /></Routes></> }

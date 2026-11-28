@@ -54,3 +54,15 @@ This remains a starter project. Before production, add OTP resend throttling/rat
 - Product details page now listens for cart updates and switches from “Choose size & add to cart” to quantity controls plus Go to Cart after the selected size is added.
 - Cart changes from the product details page stay synchronized through the existing `sh-cart-wish-update` event and `sh_cart` local storage data.
 - The private local `client/.env` file is intentionally not included; copy `client/.env.example` to `client/.env` and set your local API URL.
+
+## Per-user Wishlist and Cart persistence
+
+Wishlist and cart are stored in MongoDB per authenticated account through the `UserState` collection. The API endpoints are protected by the existing JWT middleware:
+
+- `GET /api/user-state` loads the signed-in user's wishlist and cart.
+- `PUT /api/user-state/wishlist` saves that user's wishlist product IDs.
+- `PUT /api/user-state/cart` saves that user's product/size/quantity rows and validates current stock.
+
+On login (and on a page reload with a valid session), the client loads the account state from MongoDB. LocalStorage is used only as a short-lived UI cache. Logging out clears that browser cache but does not delete the database records. A different account therefore loads its own saved wishlist and cart.
+
+The new `UserState` collection is created automatically by Mongoose when the first authenticated user saves a wishlist or cart. No manual MongoDB migration is required. Make sure the backend is connected to the intended `MONGO_URI` and deploy/restart the backend after updating the source.

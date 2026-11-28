@@ -1,4 +1,4 @@
-const BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+const BASE = (import.meta.env.VITE_API_URL || (import.meta.env.PROD ? 'https://stylehub-server-g5f7.onrender.com/api' : 'http://localhost:5000/api')).replace(/\/+$/, '');
 export async function api(path, opts = {}) {
     const isForm = opts.body instanceof FormData;
     const h = { ...(isForm ? {} : { 'Content-Type': 'application/json' }), ...(opts.headers || {}) }, t = localStorage.getItem('sh_token');

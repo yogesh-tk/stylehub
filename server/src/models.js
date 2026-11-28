@@ -91,3 +91,9 @@ export const ReturnRequest = mongoose.model('ReturnRequest', new mongoose.Schema
   refundAmount: Number,
   refundReference: String
 }, { timestamps: true }));
+
+export const UserState = mongoose.model('UserState', new mongoose.Schema({
+  user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, unique: true, index: true },
+  wishlist: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Product' }],
+  cart: [{ product: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', required: true }, size: { type: String, required: true }, quantity: { type: Number, min: 1, required: true } }]
+}, { timestamps: true }));
